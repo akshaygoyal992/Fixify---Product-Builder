@@ -73,6 +73,7 @@ const INITIAL_STATE: Omit<AppState, 'screen'> = {
   },
   address: '123 Main St, Apartment 4B',
   slot: { date: 'May 1, 2026', time: '10:00 AM' },
+  history: [],
 };
 
 interface ChatMessage {
@@ -98,6 +99,25 @@ interface Notification {
   isUnread: boolean;
 }
 
+interface Order {
+  id: string;
+  type: string;
+  service: string;
+  urgency: string;
+  date: string;
+  time: string;
+  status: 'Finding Pro' | 'Confirmed' | 'In Progress' | 'Completed' | 'Cancelled';
+  amount: string;
+  image: string | null;
+  note: string;
+  pro?: {
+    name: string;
+    rating: number;
+    avatar: string;
+    color: string;
+  };
+}
+
 interface AppState {
   screen: Screen;
   image: string | null;
@@ -114,11 +134,19 @@ interface AppState {
   };
   address: string;
   slot: { date: string; time: string };
+  history: Order[];
 }
 
 // --- Constants ---
 const PRIMARY_COLOR = "#2D336B";
 const BG_COLOR = "#F9F8F6";
+
+const DEFAULT_PRO = {
+  name: "Marcus Thorne",
+  rating: 4.9,
+  avatar: "MT",
+  color: "bg-brand-accent"
+};
 
 // --- Main App Component ---
 export default function App() {
@@ -146,6 +174,45 @@ export default function App() {
     },
     address: '123 Main St, Apartment 4B',
     slot: { date: 'May 1, 2026', time: '10:00 AM' },
+    history: JSON.parse(localStorage.getItem('fixify_history') || JSON.stringify([
+      {
+        id: 'FIX-99021',
+        type: 'Water Leakage',
+        service: 'Plumbing',
+        urgency: 'Medium',
+        date: 'May 1',
+        time: '10:00 AM',
+        status: 'Confirmed',
+        amount: '$50 - $75',
+        image: "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop",
+        note: "Significant leak under kitchen sink.",
+        pro: DEFAULT_PRO
+      },
+      {
+        id: 'FIX-8821',
+        type: 'Broken Kitchen Sink',
+        service: 'Plumbing',
+        urgency: 'Medium',
+        date: 'Apr 12, 2026',
+        time: '10:15 AM',
+        status: 'Completed',
+        amount: '$65.00',
+        image: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop",
+        note: ""
+      },
+      {
+        id: 'FIX-7742',
+        type: 'AC Installation',
+        service: 'Electrical',
+        urgency: 'Medium',
+        date: 'Mar 28, 2026',
+        time: '09:30 AM',
+        status: 'Completed',
+        amount: '$120.00',
+        image: "https://images.unsplash.com/photo-1545244044-8961ad1844b6?q=80&w=1000&auto=format&fit=crop",
+        note: ""
+      }
+    ])),
   });
 
   const [booting, setBooting] = useState(true);
@@ -172,6 +239,9 @@ export default function App() {
       if (updates.addresses) {
         localStorage.setItem('fixify_addresses', JSON.stringify(newState.addresses));
       }
+      if (updates.history) {
+        localStorage.setItem('fixify_history', JSON.stringify(newState.history));
+      }
       return newState;
     });
   };
@@ -187,13 +257,64 @@ export default function App() {
       case 'PRO_LIST': return <ProListScreen category={state.selectedCategory || 'Service'} onBack={() => navigate('CATEGORIES')} />;
       case 'UPLOAD': return <UploadScreen onBack={() => navigate('HOME')} onNext={(img) => { updateState({ image: img }); navigate('NOTE'); }} />;
       case 'NOTE': return <NoteScreen state={state} onBack={() => navigate('UPLOAD')} onNext={(note) => { updateState({ note }); navigate('AI_PREFILL'); }} />;
-      case 'AI_PREFILL': return <AIPrefillScreen state={state} onBack={() => navigate('NOTE')} onNext={(data) => { updateState({ issueData: data }); navigate('ADDRESS'); }} />;
+      case 'AI_PREFILL': return <AIPrefillScreen state={state} onBack={() => navigate('NOTE')} onNext={(data) => {
+        const orderId = `FIX-${Math.floor(10000 + Math.random() * 90000)}`;
+        const newOrder: Order = {
+          id: orderId,
+          type: data.type,
+          service: data.service,
+          urgency: data.urgency,
+          date: state.slot.date,
+          time: state.slot.time,
+          status: 'Confirmed',
+          amount: '$45 - $80',
+          image: state.image,
+          note: state.note,
+          pro: DEFAULT_PRO
+        };
+        updateState({ issueData: data, history: [newOrder, ...state.history], selectedOrderId: orderId });
+        navigate('CONFIRMATION');
+      }} />;
       case 'ADDRESS': return <AddressScreen state={state} onBack={() => navigate('AI_PREFILL')} onNext={(addr) => { updateState({ address: addr }); navigate('SLOT'); }} />;
       case 'SLOT': return <SlotSelectionScreen onBack={() => navigate('ADDRESS')} onNext={(slot) => { updateState({ slot }); navigate('SUMMARY'); }} />;
-      case 'SUMMARY': return <SummaryScreen state={state} onBack={() => navigate('SLOT')} onNext={() => navigate('CONFIRMATION')} />;
-      case 'CONFIRMATION': return <ConfirmationScreen onNext={() => navigate('ORDERS')} />;
-      case 'ORDERS': return <OrdersScreen onBack={() => navigate('HOME')} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
-      case 'ORDER_DETAILS': return <OrderDetailsScreen orderId={state.selectedOrderId || ''} onBack={() => navigate('ORDERS')} onSupport={() => navigate('SUPPORT_CHAT')} />;
+      case 'SUMMARY': return <SummaryScreen state={state} onBack={() => navigate('SLOT')} onNext={() => {
+        const orderId = `FIX-${Math.floor(10000 + Math.random() * 90000)}`;
+        const newOrder: Order = {
+          id: orderId,
+          type: state.issueData.type,
+          service: state.issueData.service,
+          urgency: state.issueData.urgency,
+          date: state.slot.date,
+          time: state.slot.time,
+          status: 'Confirmed',
+          amount: '$45 - $80',
+          image: state.image,
+          note: state.note,
+          pro: DEFAULT_PRO
+        };
+        updateState({ history: [newOrder, ...state.history], selectedOrderId: orderId });
+        navigate('CONFIRMATION');
+      }} />;
+      case 'CONFIRMATION': return (
+        <ConfirmationScreen 
+          orderId={state.selectedOrderId || ''} 
+          onNext={() => navigate('HOME')} 
+          onTrack={() => navigate('ORDER_DETAILS')}
+        />
+      );
+      case 'ORDERS': return <OrdersScreen history={state.history} onBack={() => navigate('HOME')} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
+      case 'ORDER_DETAILS': return (
+        <OrderDetailsScreen 
+          orders={state.history} 
+          orderId={state.selectedOrderId || ''} 
+          onBack={() => navigate('ORDERS')} 
+          onSupport={() => navigate('SUPPORT_CHAT')}
+          onCancelOrder={(id) => {
+            const newHistory = state.history.map(o => o.id === id ? { ...o, status: 'Cancelled' as const } : o);
+            updateState({ history: newHistory });
+          }}
+        />
+      );
       case 'SUPPORT_CHAT': return <SupportChatScreen history={state.chatMessages} onUpdate={(msgs) => updateState({ chatMessages: msgs })} onBack={() => navigate('PROFILE')} />;
       case 'ADDRESS_LIST': return <AddressListScreen addresses={state.addresses} onUpdate={(addrs) => updateState({ addresses: addrs })} onBack={() => navigate('PROFILE')} />;
       case 'PAYMENT_METHODS': return <PaymentMethodsScreen onBack={() => navigate('PROFILE')} />;
@@ -414,45 +535,59 @@ function HomeScreen({ state, onAction, setImg, onSelectOrder }: {
       <section className="flex flex-col gap-4">
         <div className="flex justify-between items-center px-1">
           <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent/40">
-            {true ? "Active Request" : "Recent Requests"}
+            {state.history.length > 0 ? "Active Request" : "Recent Requests"}
           </h3>
           <button onClick={() => onAction('ORDERS')} className="text-[10px] font-bold text-brand-accent uppercase tracking-wider">View All</button>
         </div>
         <div className="space-y-3">
-          {/* Mock active check - in real app we'd filter from state.orders */}
-          {true ? (
-            <div 
-              onClick={() => onSelectOrder('FIX-99021')}
-              className="group relative flex items-center gap-4 p-5 bg-white rounded-3xl border border-brand-accent/5 hover:border-brand-accent/20 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
-            >
-              <div className="w-14 h-14 bg-brand-accent/5 rounded-2xl flex items-center justify-center text-brand-accent shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
-                <Clock size={24} />
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start mb-0.5">
-                  <p className="font-black text-brand-text text-sm">Water Leakage</p>
-                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-400/10 rounded-full">
-                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
-                    <span className="text-[9px] font-black text-yellow-600 uppercase">Pro arriving</span>
+          {state.history.length > 0 ? (
+            (() => {
+              const latest = state.history[0];
+              const isActive = latest.status !== 'Completed' && latest.status !== 'Cancelled';
+              return (
+                <div 
+                  onClick={() => onSelectOrder(latest.id)}
+                  className="group relative flex items-center gap-4 p-5 bg-white rounded-3xl border border-brand-accent/5 hover:border-brand-accent/20 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+                >
+                  <div className="w-14 h-14 bg-brand-accent/5 rounded-2xl flex items-center justify-center text-brand-accent shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
+                    {isActive ? <Clock size={24} /> : <CheckCircle2 size={24} />}
                   </div>
+                  <div className="flex-1">
+                    <div className="flex justify-between items-start mb-0.5">
+                      <p className="font-black text-brand-text text-sm">{latest.type}</p>
+                      {isActive && (
+                        latest.pro ? (
+                          <div className="flex items-center gap-2 bg-brand-surface px-2 py-1 rounded-xl border border-brand-accent/5">
+                            <div className={`w-8 h-8 ${latest.pro.color} rounded-lg flex items-center justify-center text-[10px] font-black text-white shadow-sm shrink-0`}>
+                              {latest.pro.avatar}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-black text-brand-text uppercase leading-none mb-0.5 truncate">{latest.pro.name}</p>
+                              <div className="flex items-center gap-0.5">
+                                <Star size={8} className="fill-yellow-400 text-yellow-400" />
+                                <span className="text-[8px] font-bold text-brand-muted">{latest.pro.rating}</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-400/10 rounded-full">
+                            <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                            <span className="text-[9px] font-black text-yellow-600 uppercase">{latest.status}</span>
+                          </div>
+                        )
+                      )}
+                    </div>
+                    <p className={`text-[11px] font-medium ${isActive ? 'text-brand-muted' : 'text-green-600 uppercase font-black tracking-wider'}`}>
+                      {isActive ? `Coming ${latest.date} @ ${latest.time}` : `Completed · ${latest.date}`}
+                    </p>
+                  </div>
+                  <ChevronRight size={18} className="text-brand-muted/30 group-hover:text-brand-accent transition-colors" />
                 </div>
-                <p className="text-[11px] text-brand-muted font-medium">Coming today @ 10:45 AM</p>
-              </div>
-              <ChevronRight size={18} className="text-brand-muted/30 group-hover:text-brand-accent transition-colors" />
-            </div>
+              );
+            })()
           ) : (
-            <div 
-              onClick={() => onSelectOrder('FIX-8821')}
-              className="flex items-center gap-4 p-5 bg-white rounded-3xl border border-brand-accent/5 hover:border-brand-accent/20 transition-all cursor-pointer shadow-sm active:scale-[0.98] group"
-            >
-              <div className="w-14 h-14 bg-brand-accent/5 rounded-2xl flex items-center justify-center text-brand-accent shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
-                <CheckCircle2 size={24} />
-              </div>
-              <div className="flex-1">
-                <p className="font-black text-brand-text text-sm">Broken Kitchen Faucet</p>
-                <p className="text-[10px] text-green-600 font-black uppercase tracking-wider">Completed · 2 days ago</p>
-              </div>
-              <ChevronRight size={18} className="text-brand-muted/30 group-hover:text-brand-accent transition-colors" />
+            <div className="text-center py-8 bg-white rounded-3xl border border-dashed border-brand-accent/10">
+               <p className="text-xs text-brand-muted font-bold uppercase tracking-widest">No recent requests</p>
             </div>
           )}
         </div>
@@ -1113,7 +1248,7 @@ function SummaryScreen({ state, onBack, onNext }: { state: AppState, onBack: () 
   );
 }
 
-function ConfirmationScreen({ onNext }: { onNext: () => void }) {
+function ConfirmationScreen({ orderId, onNext, onTrack }: { orderId: string, onNext: () => void, onTrack: () => void }) {
   return (
     <div className="h-full px-8 flex flex-col items-center justify-center text-center bg-brand-accent relative">
       <motion.div 
@@ -1126,15 +1261,15 @@ function ConfirmationScreen({ onNext }: { onNext: () => void }) {
       </motion.div>
       
       <h2 className="text-2xl font-bold text-white mb-2 text-center w-full">Booking Confirmed</h2>
-      <p className="text-blue-100 text-sm mb-12 opacity-80 leading-relaxed font-medium">A professional will arrive today at 02:00 PM</p>
+      <p className="text-blue-100 text-sm mb-12 opacity-80 leading-relaxed font-medium">Professional arriving soon</p>
       
       <div className="bg-white/10 w-full py-6 rounded-[28px] mb-12 backdrop-blur-sm border border-white/5">
         <p className="text-[10px] text-blue-200 uppercase font-black tracking-[0.2em] mb-1">Order ID</p>
-        <p className="text-white font-mono text-xl font-bold">FIX-9284-A</p>
+        <p className="text-white font-mono text-xl font-bold">{orderId}</p>
       </div>
 
       <div className="w-full space-y-4">
-        <button onClick={onNext} className="w-full bg-white text-brand-accent py-5 rounded-[22px] font-bold text-sm shadow-xl active:scale-95 transition-transform">
+        <button onClick={onTrack} className="w-full bg-white text-brand-accent py-5 rounded-[22px] font-bold text-sm shadow-xl active:scale-95 transition-transform">
           Track Order
         </button>
         <button onClick={onNext} className="mt-4 text-white/60 text-xs font-bold uppercase tracking-widest block mx-auto">
@@ -1145,7 +1280,10 @@ function ConfirmationScreen({ onNext }: { onNext: () => void }) {
   );
 }
 
-function OrdersScreen({ onBack, onSelectOrder }: { onBack: () => void, onSelectOrder: (id: string) => void }) {
+function OrdersScreen({ history, onBack, onSelectOrder }: { history: Order[], onBack: () => void, onSelectOrder: (id: string) => void }) {
+  const activeOrders = history.filter(o => o.status !== 'Completed' && o.status !== 'Cancelled');
+  const pastOrders = history.filter(o => o.status === 'Completed' || o.status === 'Cancelled');
+
   return (
     <div className="h-full px-6 pt-12 pb-32 overflow-y-auto no-scrollbar">
       <div className="flex items-center justify-between mb-8">
@@ -1154,52 +1292,69 @@ function OrdersScreen({ onBack, onSelectOrder }: { onBack: () => void, onSelectO
       </div>
 
       <div className="space-y-6">
-        <section>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-brand-muted mb-4 ml-1">Active</h3>
-          <div 
-            onClick={() => onSelectOrder('FIX-99021')}
-            className="card border-l-4 border-l-brand-accent cursor-pointer hover:bg-brand-surface transition-all"
-          >
-            <div className="flex justify-between items-start mb-4">
-               <div>
-                  <p className="font-bold">Water Leakage</p>
-                  <p className="text-xs text-brand-muted">#FIX-99021 · May 1, 10:00 AM</p>
-               </div>
-               <span className="px-2 py-1 bg-brand-accent/10 text-brand-accent text-[10px] font-bold rounded uppercase">Finding Pro</span>
+        {activeOrders.length > 0 && (
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-brand-muted mb-4 ml-1">Active</h3>
+            <div className="space-y-3">
+              {activeOrders.map(order => (
+                <div 
+                  key={order.id}
+                  onClick={() => onSelectOrder(order.id)}
+                  className="card border-l-4 border-l-brand-accent cursor-pointer hover:bg-brand-surface transition-all"
+                >
+                  <div className="flex justify-between items-start mb-4">
+                     <div>
+                        <p className="font-bold">{order.type}</p>
+                        <p className="text-xs text-brand-muted">#{order.id} · {order.date}, {order.time}</p>
+                     </div>
+                     {order.pro ? (
+                        <div className="flex items-center gap-2 bg-brand-surface px-2 py-1 rounded-xl border border-brand-accent/5">
+                          <div className={`w-7 h-7 ${order.pro.color} rounded-lg flex items-center justify-center text-[10px] font-black text-white shadow-sm`}>
+                            {order.pro.avatar}
+                          </div>
+                          <div>
+                            <p className="text-[9px] font-black text-brand-text uppercase leading-none mb-0.5">{order.pro.name}</p>
+                            <div className="flex items-center gap-0.5">
+                              <Star size={8} className="fill-yellow-400 text-yellow-400" />
+                              <span className="text-[8px] font-bold text-brand-muted">{order.pro.rating}</span>
+                            </div>
+                          </div>
+                        </div>
+                     ) : (
+                        <span className="px-2 py-1 bg-brand-accent/10 text-brand-accent text-[10px] font-bold rounded uppercase">{order.status}</span>
+                     )}
+                  </div>
+                  <button className="w-full py-2 bg-brand-accent text-white rounded-lg text-xs font-bold shadow-md">Track Pro</button>
+                </div>
+              ))}
             </div>
-            <button className="w-full py-2 bg-brand-accent text-white rounded-lg text-xs font-bold shadow-md">Track Pro</button>
-          </div>
-        </section>
+          </section>
+        )}
 
         <section className="pt-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-brand-muted mb-4 ml-1">Past Requests</h3>
           <div className="space-y-3">
-            <div 
-              onClick={() => onSelectOrder('FIX-8821')}
-              className="card flex items-center justify-between hover:bg-brand-surface cursor-pointer transition-colors"
-            >
-               <div>
-                  <p className="font-bold">Broken Kitchen Sink</p>
-                  <p className="text-xs text-brand-muted">Apr 12, 2026</p>
-               </div>
-               <div className="text-right">
-                  <span className="text-green-600 font-bold text-xs block">Completed</span>
-                  <p className="text-xs font-bold mt-1">$65.00</p>
-               </div>
-            </div>
-            <div 
-              onClick={() => onSelectOrder('FIX-7742')}
-              className="card flex items-center justify-between hover:bg-brand-surface cursor-pointer transition-colors"
-            >
-               <div>
-                  <p className="font-bold">AC Installation</p>
-                  <p className="text-xs text-brand-muted">Mar 28, 2026</p>
-               </div>
-               <div className="text-right">
-                  <span className="text-green-600 font-bold text-xs block">Completed</span>
-                  <p className="text-xs font-bold mt-1">$120.00</p>
-               </div>
-            </div>
+            {pastOrders.length > 0 ? pastOrders.map(order => (
+              <div 
+                key={order.id}
+                onClick={() => onSelectOrder(order.id)}
+                className="card flex items-center justify-between hover:bg-brand-surface cursor-pointer transition-colors"
+              >
+                 <div>
+                    <p className="font-bold">{order.type}</p>
+                    <p className="text-xs text-brand-muted">{order.date}</p>
+                 </div>
+                 <div className="text-right">
+                    <span className={`font-bold text-xs block ${order.status === 'Completed' ? 'text-green-600' : 'text-red-500'}`}>{order.status}</span>
+                    <p className="text-xs font-bold mt-1">{order.amount}</p>
+                 </div>
+              </div>
+            )) : (
+              <div className="text-center py-10 opacity-40">
+                <Package size={48} className="mx-auto mb-4" />
+                <p className="text-sm font-bold uppercase tracking-widest">No past orders</p>
+              </div>
+            )}
           </div>
         </section>
       </div>
@@ -1207,8 +1362,9 @@ function OrdersScreen({ onBack, onSelectOrder }: { onBack: () => void, onSelectO
   );
 }
 
-function OrderDetailsScreen({ orderId, onBack, onSupport }: { orderId: string, onBack: () => void, onSupport: () => void }) {
-  const isActive = orderId === 'FIX-99021';
+function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder }: { orders: Order[], orderId: string, onBack: () => void, onSupport: () => void, onCancelOrder: (id: string) => void }) {
+  const order = orders.find(o => o.id === orderId);
+  const isActive = order ? order.status !== 'Completed' && order.status !== 'Cancelled' : false;
   const [hasReviewed, setHasReviewed] = useState(orderId === 'FIX-8821');
   const [showConfirm, setShowConfirm] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -1216,27 +1372,23 @@ function OrderDetailsScreen({ orderId, onBack, onSupport }: { orderId: string, o
   const [showShareSuccess, setShowShareSuccess] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
 
+  if (!order) return <div className="h-full flex items-center justify-center p-6 text-brand-muted font-bold text-center">Order not found.</div>;
+
   const details = {
-    id: orderId,
-    title: isActive ? "Water Leakage" : (orderId === 'FIX-8821' ? "Broken Kitchen Sink" : "AC Installation"),
-    bookedAt: isActive ? "May 1, 2026 · 10:00 AM" : (orderId === 'FIX-8821' ? "Apr 12, 2026 · 10:15 AM" : "Mar 28, 2026 · 09:30 AM"),
-    completedAt: isActive ? null : (orderId === 'FIX-8821' ? "Apr 12, 2026 · 01:22 PM" : "Mar 28, 2026 · 03:45 PM"),
-    status: isActive ? "Pro on the way" : "Completed",
+    id: order.id,
+    title: order.type,
+    bookedAt: `${order.date} · ${order.time}`,
+    completedAt: order.status === 'Completed' ? order.date : null,
+    status: order.status,
     arrival: isActive ? "Today · 10:45 AM" : null,
-    amount: isActive ? "$50 - $75" : (orderId === 'FIX-8821' ? "$65.00" : "$120.00"),
-    paymentStatus: isActive ? "Unpaid" : "Paid",
+    amount: order.amount,
+    paymentStatus: order.status === 'Completed' ? "Paid" : "Unpaid",
     rating: orderId === 'FIX-8821' ? 5 : 0,
     review: orderId === 'FIX-8821' ? "The plumber arrived quickly and fixed the leak perfectly. Very clean work and friendly attitude." : "",
-    beforeImg: isActive 
-      ? "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop"
-      : (orderId === 'FIX-8821' 
-        ? "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop"
-        : "https://images.unsplash.com/photo-1545244044-8961ad1844b6?q=80&w=1000&auto=format&fit=crop"),
-    afterImg: isActive ? null : (orderId === 'FIX-8821'
-      ? "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop"
-      : "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=1000&auto=format&fit=crop"),
-    description: isActive ? "There is a significant leak under the kitchen sink. Water is clear but it's soaking the cabinet floor." : null,
-    pro: {
+    beforeImg: order.image || "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop",
+    afterImg: order.status === 'Completed' ? "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=1000&auto=format&fit=crop" : null,
+    description: order.note || "No additional description provided.",
+    pro: order.pro || {
       name: "Marcus Thorne",
       rating: 4.9,
       avatar: "MT",
@@ -1683,8 +1835,9 @@ function OrderDetailsScreen({ orderId, onBack, onSupport }: { orderId: string, o
                   </button>
                   <button 
                     onClick={() => {
+                      onCancelOrder(orderId);
                       setShowCancelConfirm(false);
-                      onBack(); // Simulate cancellation by going back
+                      onBack();
                     }}
                     className="py-4 text-xs font-black uppercase tracking-widest text-white bg-red-500 rounded-2xl shadow-lg shadow-red-500/20"
                   >
