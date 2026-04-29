@@ -610,7 +610,7 @@ function HomeScreen({ state, onAction, setImg, onSelectOrder }: {
 }
 
 function CategoriesScreen({ onBack, onSelect }: { onBack: () => void, onSelect: (cat: string) => void }) {
-  const cats = ["Plumbing", "Electrical", "Carpentry", "Cleaning", "Appliance", "Gardening", "Painting", "Locksmith"];
+  const cats = ["Appliance", "Carpentry", "Civil work", "Electrical", "Gardening", "Locksmith", "Painting", "Plumbing"];
   return (
     <div className="h-full px-6 pt-12">
       <div className="flex items-center gap-4 mb-8">
