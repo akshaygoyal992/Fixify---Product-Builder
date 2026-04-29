@@ -23,20 +23,79 @@ import {
   Mic,
   MoreVertical,
   Send,
-  Sparkles
+  Sparkles,
+  CreditCard,
+  Smartphone,
+  Wallet,
+  Banknote,
+  ShieldCheck,
+  Bell,
+  Tag,
+  Package,
+  Settings,
+  History,
+  MessageCircle,
+  FileText,
+  Share2,
+  XCircle,
+  Info,
+  Maximize2
 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import { GoogleGenAI, Type } from "@google/genai";
 
 // --- Types ---
 type Screen = 
   | 'SPLASH' | 'LOGIN' | 'OTP' | 'HOME' | 'CATEGORIES' | 'PRO_LIST'
   | 'UPLOAD' | 'NOTE' | 'AI_PREFILL' | 'ADDRESS' 
-  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'PROFILE';
+  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'ADDRESS_LIST' | 'PAYMENT_METHODS' | 'NOTIFICATIONS' | 'LEGAL' | 'TERMS' | 'PRIVACY' | 'CHAT_HISTORY' | 'PROFILE';
+
+const INITIAL_STATE: Omit<AppState, 'screen'> = {
+  image: null,
+  note: '',
+  selectedCategory: null,
+  selectedOrderId: null,
+  chatMessages: [],
+  addresses: [
+    { id: '1', label: 'Home', fullAddress: '123 Main St, Apartment 4B, New York, NY 10001', isDefault: true },
+    { id: '2', label: 'Office', fullAddress: '456 Tech Way, Suite 200, San Francisco, CA 94105', isDefault: false }
+  ],
+  notifications: [
+    { id: '1', title: 'Worker on the Way', message: 'Elena has started her journeys to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
+    { id: '2', title: 'Job Booked Successfully', message: 'Your booking for Plumbing Repair (FIX-8821) is confirmed for tomorrow.', time: '1 hour ago', type: 'ORDER', isUnread: false },
+    { id: '3', title: 'Profile Verified', message: 'Your phone number has been successfully verified.', time: '2 hours ago', type: 'SYSTEM', isUnread: false },
+    { id: '4', title: 'Special Offer!', message: 'Get 20% off on your next AC service using code COOLFIX.', time: '5 hours ago', type: 'PROMO', isUnread: false }
+  ],
+  issueData: {
+    type: 'Water Leakage',
+    service: 'Plumbing',
+    urgency: 'Medium',
+  },
+  address: '123 Main St, Apartment 4B',
+  slot: { date: 'May 1, 2026', time: '10:00 AM' },
+};
 
 interface ChatMessage {
   id: number;
   text: string;
   sender: 'bot' | 'user';
   timestamp: string;
+}
+
+interface Address {
+  id: string;
+  label: string;
+  fullAddress: string;
+  isDefault: boolean;
+}
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  time: string;
+  type: 'ORDER' | 'SYSTEM' | 'PROMO';
+  isUnread: boolean;
 }
 
 interface AppState {
@@ -46,6 +105,8 @@ interface AppState {
   selectedCategory: string | null;
   selectedOrderId: string | null;
   chatMessages: ChatMessage[];
+  addresses: Address[];
+  notifications: Notification[];
   issueData: {
     type: string;
     service: string;
@@ -68,6 +129,16 @@ export default function App() {
     selectedCategory: null,
     selectedOrderId: null,
     chatMessages: JSON.parse(localStorage.getItem('fixify_chat') || '[]'),
+    addresses: JSON.parse(localStorage.getItem('fixify_addresses') || JSON.stringify([
+      { id: '1', label: 'Home', fullAddress: '123 Main St, Apartment 4B, New York, NY 10001', isDefault: true },
+      { id: '2', label: 'Office', fullAddress: '456 Tech Way, Suite 200, San Francisco, CA 94105', isDefault: false }
+    ])),
+    notifications: [
+      { id: '1', title: 'Worker on the Way', message: 'Elena has started her journeys to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
+      { id: '2', title: 'Job Booked Successfully', message: 'Your booking for Plumbing Repair (FIX-8821) is confirmed for tomorrow.', time: '1 hour ago', type: 'ORDER', isUnread: false },
+      { id: '3', title: 'Profile Verified', message: 'Your phone number has been successfully verified.', time: '2 hours ago', type: 'SYSTEM', isUnread: false },
+      { id: '4', title: 'Special Offer!', message: 'Get 20% off on your next AC service using code COOLFIX.', time: '5 hours ago', type: 'PROMO', isUnread: false }
+    ],
     issueData: {
       type: 'Water Leakage',
       service: 'Plumbing',
@@ -98,6 +169,9 @@ export default function App() {
       if (updates.chatMessages) {
         localStorage.setItem('fixify_chat', JSON.stringify(newState.chatMessages));
       }
+      if (updates.addresses) {
+        localStorage.setItem('fixify_addresses', JSON.stringify(newState.addresses));
+      }
       return newState;
     });
   };
@@ -108,7 +182,7 @@ export default function App() {
       case 'SPLASH': return <SplashScreen />;
       case 'LOGIN': return <LoginScreen onNext={() => navigate('OTP')} />;
       case 'OTP': return <OTPScreen onNext={() => navigate('HOME')} />;
-      case 'HOME': return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} />;
+      case 'HOME': return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
       case 'CATEGORIES': return <CategoriesScreen onBack={() => navigate('HOME')} onSelect={(cat) => { updateState({ selectedCategory: cat }); navigate('PRO_LIST'); }} />;
       case 'PRO_LIST': return <ProListScreen category={state.selectedCategory || 'Service'} onBack={() => navigate('CATEGORIES')} />;
       case 'UPLOAD': return <UploadScreen onBack={() => navigate('HOME')} onNext={(img) => { updateState({ image: img }); navigate('NOTE'); }} />;
@@ -119,10 +193,20 @@ export default function App() {
       case 'SUMMARY': return <SummaryScreen state={state} onBack={() => navigate('SLOT')} onNext={() => navigate('CONFIRMATION')} />;
       case 'CONFIRMATION': return <ConfirmationScreen onNext={() => navigate('ORDERS')} />;
       case 'ORDERS': return <OrdersScreen onBack={() => navigate('HOME')} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
-      case 'ORDER_DETAILS': return <OrderDetailsScreen orderId={state.selectedOrderId || ''} onBack={() => navigate('ORDERS')} />;
+      case 'ORDER_DETAILS': return <OrderDetailsScreen orderId={state.selectedOrderId || ''} onBack={() => navigate('ORDERS')} onSupport={() => navigate('SUPPORT_CHAT')} />;
       case 'SUPPORT_CHAT': return <SupportChatScreen history={state.chatMessages} onUpdate={(msgs) => updateState({ chatMessages: msgs })} onBack={() => navigate('PROFILE')} />;
-      case 'PROFILE': return <ProfileScreen onBack={() => navigate('HOME')} onSupport={() => navigate('SUPPORT_CHAT')} />;
-      default: return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} />;
+      case 'ADDRESS_LIST': return <AddressListScreen addresses={state.addresses} onUpdate={(addrs) => updateState({ addresses: addrs })} onBack={() => navigate('PROFILE')} />;
+      case 'PAYMENT_METHODS': return <PaymentMethodsScreen onBack={() => navigate('PROFILE')} />;
+      case 'NOTIFICATIONS': return <NotificationsScreen notifications={state.notifications} onBack={() => navigate('PROFILE')} onMarkRead={(id) => updateState({ notifications: state.notifications.map(n => n.id === id ? { ...n, isUnread: false } : n) })} />;
+      case 'LEGAL': return <LegalScreen onBack={() => navigate('PROFILE')} onOpenTerms={() => navigate('TERMS')} onOpenPrivacy={() => navigate('PRIVACY')} />;
+      case 'TERMS': return <DocumentScreen title="Terms & Conditions" onBack={() => navigate('LEGAL')} content={TERMS_CONTENT} />;
+      case 'PRIVACY': return <DocumentScreen title="Privacy Policy" onBack={() => navigate('LEGAL')} content={PRIVACY_POLICY_CONTENT} />;
+      case 'CHAT_HISTORY': return <ChatHistoryScreen onBack={() => navigate('PROFILE')} onSelectChat={() => navigate('SUPPORT_CHAT')} />;
+      case 'PROFILE': return <ProfileScreen onBack={() => navigate('HOME')} onSupport={() => navigate('SUPPORT_CHAT')} onAddresses={() => navigate('ADDRESS_LIST')} onPayments={() => navigate('PAYMENT_METHODS')} onNotifications={() => navigate('NOTIFICATIONS')} onLegal={() => navigate('LEGAL')} onChatHistory={() => navigate('CHAT_HISTORY')} onLogout={() => {
+        localStorage.removeItem('fixify_chat');
+        updateState({ ...INITIAL_STATE, screen: 'LOGIN' });
+      }} />;
+      default: return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
     }
   };
 
@@ -266,13 +350,35 @@ function OTPScreen({ onNext }: { onNext: () => void }) {
   );
 }
 
-function HomeScreen({ state, onAction, setImg }: { 
+function HomeScreen({ state, onAction, setImg, onSelectOrder }: { 
   state: AppState, 
   onAction: (s: Screen) => void,
-  setImg: (i: string) => void
+  setImg: (i: string) => void,
+  onSelectOrder: (id: string) => void
 }) {
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImg(reader.result as string);
+        onAction('NOTE');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <div className="h-full px-6 pt-12 flex flex-col gap-8 pb-32">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        className="hidden" 
+        accept="image/*" 
+        onChange={handleFileChange} 
+      />
       <header className="flex justify-between items-center">
         <div>
           <span className="text-xl font-bold tracking-tight text-brand-accent">Fixify</span>
@@ -296,7 +402,7 @@ function HomeScreen({ state, onAction, setImg }: {
           <span>Take Photo</span>
         </button>
         <button 
-          onClick={() => onAction('UPLOAD')}
+          onClick={() => fileInputRef.current?.click()}
           className="btn-secondary w-full py-5 text-base"
         >
           <ImageIcon size={22} className="opacity-60" />
@@ -304,26 +410,59 @@ function HomeScreen({ state, onAction, setImg }: {
         </button>
       </div>
 
-      {/* Recent Requests */}
+      {/* Recent Requests or Active Job */}
       <section className="flex flex-col gap-4">
-        <div className="flex justify-between items-center">
-          <h3 className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-muted">Recent Requests</h3>
+        <div className="flex justify-between items-center px-1">
+          <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-accent/40">
+            {true ? "Active Request" : "Recent Requests"}
+          </h3>
+          <button onClick={() => onAction('ORDERS')} className="text-[10px] font-bold text-brand-accent uppercase tracking-wider">View All</button>
         </div>
         <div className="space-y-3">
-          <div className="flex items-center gap-4 p-4 bg-brand-surface rounded-2xl border border-transparent hover:border-brand-secondary transition-all cursor-pointer">
-            <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center text-brand-accent shadow-sm">
-              <Clock size={20} />
+          {/* Mock active check - in real app we'd filter from state.orders */}
+          {true ? (
+            <div 
+              onClick={() => onSelectOrder('FIX-99021')}
+              className="group relative flex items-center gap-4 p-5 bg-white rounded-3xl border border-brand-accent/5 hover:border-brand-accent/20 transition-all cursor-pointer shadow-sm active:scale-[0.98]"
+            >
+              <div className="w-14 h-14 bg-brand-accent/5 rounded-2xl flex items-center justify-center text-brand-accent shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
+                <Clock size={24} />
+              </div>
+              <div className="flex-1">
+                <div className="flex justify-between items-start mb-0.5">
+                  <p className="font-black text-brand-text text-sm">Water Leakage</p>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 bg-yellow-400/10 rounded-full">
+                    <div className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse" />
+                    <span className="text-[9px] font-black text-yellow-600 uppercase">Pro arriving</span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-brand-muted font-medium">Coming today @ 10:45 AM</p>
+              </div>
+              <ChevronRight size={18} className="text-brand-muted/30 group-hover:text-brand-accent transition-colors" />
             </div>
-            <div className="flex-1">
-              <p className="font-bold text-sm">Broken Kitchen Faucet</p>
-              <p className="text-[10px] text-green-600 font-semibold uppercase tracking-wider">Completed · 2 days ago</p>
+          ) : (
+            <div 
+              onClick={() => onSelectOrder('FIX-8821')}
+              className="flex items-center gap-4 p-5 bg-white rounded-3xl border border-brand-accent/5 hover:border-brand-accent/20 transition-all cursor-pointer shadow-sm active:scale-[0.98] group"
+            >
+              <div className="w-14 h-14 bg-brand-accent/5 rounded-2xl flex items-center justify-center text-brand-accent shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
+                <CheckCircle2 size={24} />
+              </div>
+              <div className="flex-1">
+                <p className="font-black text-brand-text text-sm">Broken Kitchen Faucet</p>
+                <p className="text-[10px] text-green-600 font-black uppercase tracking-wider">Completed · 2 days ago</p>
+              </div>
+              <ChevronRight size={18} className="text-brand-muted/30 group-hover:text-brand-accent transition-colors" />
             </div>
-          </div>
+          )}
         </div>
       </section>
 
       {/* Promotional Card - Problem Centric */}
-      <div className="card bg-brand-accent/5 border-none p-6 rounded-[32px] flex items-center gap-4">
+      <div 
+        onClick={() => onAction('UPLOAD')}
+        className="card bg-brand-accent/5 border-none p-6 rounded-[32px] flex items-center gap-4 cursor-pointer hover:bg-brand-accent/10 transition-all active:scale-[0.98]"
+      >
         <div className="flex-1">
           <h4 className="font-bold text-brand-accent">Unsure what's wrong?</h4>
           <p className="text-xs text-brand-accent/70 mt-1">Our AI can analyze your problem and suggest the right professional.</p>
@@ -457,6 +596,7 @@ function ProListScreen({ category, onBack }: { category: string, onBack: () => v
 function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: string) => void }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
+  const galleryInputRef = React.useRef<HTMLInputElement>(null);
   const [stream, setStream] = React.useState<MediaStream | null>(null);
   const [isCapturing, setIsCapturing] = React.useState(false);
 
@@ -509,13 +649,29 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
     }
   };
 
-  const handleGalleryUpload = () => {
-    // Falls back to mock if real upload isn't implemented
-    onNext("https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=687&auto=format&fit=crop");
+  const handleGalleryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+        }
+        onNext(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   return (
     <div className="h-full px-6 flex flex-col pt-12 pb-8">
+      <input 
+        type="file" 
+        ref={galleryInputRef} 
+        className="hidden" 
+        accept="image/*" 
+        onChange={handleGalleryChange} 
+      />
       <div className="flex items-center justify-between mb-8">
         <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
         <h2 className="text-xl font-bold">Snap the Issue</h2>
@@ -553,7 +709,7 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
       <canvas ref={canvasRef} className="hidden" />
 
       <div className="mt-8 grid grid-cols-2 gap-4">
-        <button onClick={handleGalleryUpload} className="btn-secondary">
+        <button onClick={() => galleryInputRef.current?.click()} className="btn-secondary">
           <ImageIcon size={20} />
           Gallery
         </button>
@@ -616,86 +772,181 @@ function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => 
 function AIPrefillScreen({ state, onBack, onNext }: { state: AppState, onBack: () => void, onNext: (d: any) => void }) {
   const [data, setData] = useState(state.issueData);
   const [analyzing, setAnalyzing] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = setTimeout(() => setAnalyzing(false), 2000);
-    return () => clearTimeout(timer);
-  }, []);
+    const analyzeIssue = async () => {
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) {
+          throw new Error('AI service is currently unavailable.');
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
+        
+        const contents: any[] = [];
+        
+        if (state.image) {
+          const base64Data = state.image.split(',')[1];
+          const mimeType = state.image.split(';')[0].split(':')[1];
+          contents.push({
+            inlineData: {
+              mimeType,
+              data: base64Data
+            }
+          });
+        }
+        
+        contents.push({
+          text: `Analyze this home repair issue based on the provided image and user note. 
+          User Note: "${state.note || 'No note provided'}"
+          
+          Return a JSON object with the following fields:
+          - type: A specific name for the problem (e.g., "Leaky Kitchen Faucet", "Clogged Drain")
+          - service: The general category of professional needed (e.g., "Plumbing", "Electrical", "Carpentry")
+          - urgency: One of "Low", "Medium", "High"
+          
+          Be as accurate and specific as possible.`
+        });
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: { parts: contents },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                type: { type: Type.STRING },
+                service: { type: Type.STRING },
+                urgency: { type: Type.STRING, enum: ["Low", "Medium", "High"] }
+              },
+              required: ["type", "service", "urgency"]
+            }
+          }
+        });
+
+        if (response.text) {
+          const result = JSON.parse(response.text);
+          setData(result);
+        }
+      } catch (err) {
+        console.error("AI Analysis Error:", err);
+        setError("AI detection failed. You can manually adjust the details.");
+      } finally {
+        setAnalyzing(false);
+      }
+    };
+
+    analyzeIssue();
+  }, [state.image, state.note]);
 
   if (analyzing) {
     return (
       <div className="h-full flex flex-col items-center justify-center px-8 relative bg-white">
         <motion.div 
-          animate={{ scale: [1, 1.1, 1], opacity: [0.5, 1, 0.5] }}
+          animate={{ 
+            scale: [1, 1.1, 1], 
+            rotate: [0, 10, -10, 0],
+            opacity: [0.5, 1, 0.5] 
+          }}
           transition={{ duration: 2, repeat: Infinity }}
           className="w-24 h-24 bg-brand-accent/10 rounded-full flex items-center justify-center mb-6"
         >
-           <Plus className="text-brand-accent w-10 h-10" />
+           <Sparkles className="text-brand-accent w-10 h-10" />
         </motion.div>
-        <h2 className="text-xl font-bold mb-2">Analyzing Image...</h2>
-        <p className="text-center text-brand-muted text-sm">Fixify AI is detecting the issue type and urgency level.</p>
+        <h2 className="text-xl font-bold mb-2">Analyzing Issue...</h2>
+        <p className="text-center text-brand-muted text-sm px-4">Fixify AI is detecting the exact issue type and urgency level based on your photo and notes.</p>
         
-        {/* Mock progress chips */}
-        <div className="flex gap-2 mt-8">
-           <div className="h-1 w-8 bg-brand-accent rounded-full animate-pulse" />
-           <div className="h-1 w-8 bg-brand-accent/20 rounded-full" />
-           <div className="h-1 w-8 bg-brand-accent/20 rounded-full" />
+        <div className="flex gap-2 mt-12">
+           <motion.div 
+             animate={{ height: [4, 12, 4] }}
+             transition={{ duration: 1, repeat: Infinity, delay: 0 }}
+             className="w-1.5 bg-brand-accent rounded-full" 
+           />
+           <motion.div 
+             animate={{ height: [4, 12, 4] }}
+             transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
+             className="w-1.5 bg-brand-accent rounded-full" 
+           />
+           <motion.div 
+             animate={{ height: [4, 12, 4] }}
+             transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
+             className="w-1.5 bg-brand-accent rounded-full" 
+           />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full px-6 flex flex-col pt-12 pb-8">
-       <div className="flex items-center justify-between mb-8">
-        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
-        <h2 className="text-xl font-bold">AI Analysis</h2>
+    <div className="h-full px-6 flex flex-col pt-12 pb-8 overflow-y-auto no-scrollbar">
+      <div className="flex items-center justify-between mb-8">
+        <button onClick={onBack} className="p-2 -ml-2 hover:bg-brand-surface rounded-xl transition-colors"><ArrowLeft size={24} /></button>
+        <h2 className="text-xl font-bold text-brand-text">AI Analysis</h2>
         <div className="w-10" />
       </div>
 
-      <div className="card bg-brand-accent/5 border-dashed border-brand-accent/30 flex items-center gap-3 p-3 rounded-2xl mb-6">
-        <div className="p-2 bg-brand-accent text-white rounded-lg">
-           <CheckCircle2 size={16} />
+      {error && (
+        <div className="bg-red-50 border border-red-100 p-4 rounded-2xl mb-6 flex items-start gap-3">
+          <AlertCircle size={18} className="text-red-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-red-700 font-medium leading-relaxed">{error}</p>
         </div>
-        <p className="text-xs font-medium text-brand-accent">All fields pre-filled based on your image.</p>
+      )}
+
+      <div className="bg-brand-accent/5 rounded-[32px] p-8 mb-8 border border-brand-accent/10 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10">
+           <Sparkles size={48} className="text-brand-accent" />
+        </div>
+        <p className="text-[10px] font-black uppercase text-brand-accent tracking-[0.2em] mb-4">Detected Details</p>
+        
+        <div className="space-y-6">
+          <div>
+            <label className="text-[10px] font-black uppercase text-brand-muted tracking-widest mb-1.5 block px-1">Issue Type</label>
+            <input 
+              type="text" 
+              value={data.type}
+              onChange={(e) => setData({ ...data, type: e.target.value })}
+              className="bg-white border border-brand-secondary rounded-2xl p-4 w-full font-bold text-brand-text outline-none focus:ring-2 focus:ring-brand-accent/20 transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase text-brand-muted tracking-widest mb-1.5 block px-1">Service Required</label>
+            <input 
+              type="text" 
+              value={data.service}
+              onChange={(e) => setData({ ...data, service: e.target.value })}
+              className="bg-white border border-brand-secondary rounded-2xl p-4 w-full font-bold text-brand-text outline-none focus:ring-2 focus:ring-brand-accent/20 transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase text-brand-muted tracking-widest mb-1.5 block px-1">Urgency Level</label>
+            <div className="flex gap-2">
+              {['Low', 'Medium', 'High'].map(u => (
+                <button 
+                  key={u}
+                  onClick={() => setData({ ...data, urgency: u })}
+                  className={`flex-1 py-3 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all ${data.urgency === u ? 'bg-brand-accent text-white border-brand-accent shadow-lg shadow-brand-accent/20' : 'bg-white text-brand-text border-brand-secondary'}`}
+                >
+                  {u}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="space-y-6 flex-1">
-        <div className="flex flex-col gap-1.5">
-           <label className="text-xs font-semibold uppercase tracking-wider text-brand-muted px-1">Detected Issue</label>
-           <div className="flex items-center justify-between p-4 bg-white border border-brand-secondary rounded-2xl">
-             <span className="font-bold">{data.type}</span>
-             <button className="text-brand-accent text-sm font-semibold">Edit</button>
-           </div>
+      <div className="mt-auto space-y-4">
+        <div className="flex items-center gap-2 px-2">
+          <ShieldCheck size={16} className="text-green-500" />
+          <p className="text-[10px] text-brand-muted font-bold uppercase tracking-wider">AI results can be edited if needed</p>
         </div>
-
-        <div className="flex flex-col gap-1.5">
-           <label className="text-xs font-semibold uppercase tracking-wider text-brand-muted px-1">Service Required</label>
-           <div className="flex items-center justify-between p-4 bg-white border border-brand-secondary rounded-2xl">
-             <span className="font-bold">{data.service}</span>
-             <button className="text-brand-accent text-sm font-semibold">Edit</button>
-           </div>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-           <label className="text-xs font-semibold uppercase tracking-wider text-brand-muted px-1">Urgency</label>
-           <div className="flex gap-2">
-             {['Low', 'Medium', 'Emergency'].map(u => (
-               <button 
-                 key={u}
-                 onClick={() => setData(prev => ({ ...prev, urgency: u }))}
-                 className={`flex-1 py-3 rounded-xl border text-sm font-bold transition-all ${data.urgency === u ? 'bg-brand-accent text-white border-brand-accent' : 'bg-white text-brand-text border-brand-secondary'}`}
-               >
-                 {u}
-               </button>
-             ))}
-           </div>
-        </div>
+        <button onClick={() => onNext(data)} className="btn-primary w-full py-4 text-base shadow-xl">
+          Confirm & Continue
+        </button>
       </div>
-
-      <button onClick={() => onNext(data)} className="btn-primary w-full shadow-lg">
-        Looks good, continue
-      </button>
     </div>
   );
 }
@@ -956,9 +1207,14 @@ function OrdersScreen({ onBack, onSelectOrder }: { onBack: () => void, onSelectO
   );
 }
 
-function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () => void }) {
+function OrderDetailsScreen({ orderId, onBack, onSupport }: { orderId: string, onBack: () => void, onSupport: () => void }) {
   const isActive = orderId === 'FIX-99021';
   const [hasReviewed, setHasReviewed] = useState(orderId === 'FIX-8821');
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [showShareSuccess, setShowShareSuccess] = useState(false);
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   const details = {
     id: orderId,
@@ -988,19 +1244,154 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
     }
   };
 
+  const handleDownloadReceipt = () => {
+    setIsDownloading(true);
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(45, 51, 107); // Brand Primary
+    doc.text("FIXIFY RECEIPT", 20, 30);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text(`Order ID: #${details.id}`, 20, 38);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 43);
+    
+    // Divider
+    doc.setDrawColor(230, 230, 230);
+    doc.line(20, 50, 190, 50);
+    
+    // Summary
+    doc.setFontSize(14);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Service Details", 20, 65);
+    
+    doc.setFontSize(11);
+    doc.text(`Service Name:`, 20, 75);
+    doc.setFont("helvetica", "bold");
+    doc.text(`${details.title}`, 60, 75);
+    
+    doc.setFont("helvetica", "normal");
+    doc.text(`Status:`, 20, 83);
+    doc.text(`${details.status}`, 60, 83);
+    
+    doc.text(`Booked On:`, 20, 91);
+    doc.text(`${details.bookedAt}`, 60, 91);
+    
+    if (details.completedAt) {
+      doc.text(`Completed On:`, 20, 99);
+      doc.text(`${details.completedAt}`, 60, 99);
+    }
+    
+    // Pro Details
+    doc.setFontSize(14);
+    doc.text("Professional Assigned", 20, 115);
+    doc.setFontSize(11);
+    doc.text(`${details.pro.name}`, 20, 125);
+    
+    // Payment Details
+    doc.setDrawColor(45, 51, 107);
+    doc.setFillColor(245, 245, 250);
+    doc.rect(20, 140, 170, 40, "F");
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.text("Payment Summary", 30, 155);
+    
+    doc.setFontSize(16);
+    doc.text(`Total Amount: ${details.amount}`, 30, 170);
+    doc.setFontSize(10);
+    doc.text(`Payment Status: ${details.paymentStatus}`, 130, 170);
+    
+    // Footer
+    doc.setFontSize(9);
+    doc.setTextColor(180, 180, 180);
+    doc.text("Thank you for using Fixify. For any queries, contact support@fixify.com", 105, 280, { align: "center" });
+    
+    // Save
+    setTimeout(() => {
+      doc.save(`Fixify_Receipt_${details.id}.pdf`);
+      setIsDownloading(false);
+    }, 1000);
+  };
+
+  const handleShare = async () => {
+    const shareText = `Fixify Order #${details.id}: My ${details.title} service is ${details.status}. Booked for ${details.bookedAt}.`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Fixify Order Details',
+          text: shareText,
+          url: window.location.href
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      // Fallback
+      navigator.clipboard.writeText(shareText);
+      setShowShareSuccess(true);
+      setTimeout(() => setShowShareSuccess(false), 2000);
+    }
+  };
+
+  const checkCancellationCharge = () => {
+    try {
+      const parts = details.bookedAt.split(' · ');
+      if (parts.length < 2) return false;
+      const dateStr = parts[0]; 
+      const timeStr = parts[1];
+      const bookedTime = new Date(`${dateStr} ${timeStr}`);
+      const now = new Date();
+      const diffMs = bookedTime.getTime() - now.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+      return diffHours > 0 && diffHours < 4;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const isLateCancellation = checkCancellationCharge();
+
   return (
-    <div className="h-full flex flex-col pt-12">
-      <div className="px-6 flex items-center gap-4 mb-6">
-        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
-        <div>
-          <h2 className="text-xl font-bold">Order #{orderId}</h2>
-          <p className={`text-xs font-bold uppercase tracking-widest ${isActive ? 'text-brand-accent' : 'text-green-600'}`}>
-            {details.status}
-          </p>
+    <div className="h-full flex flex-col pt-12 relative overflow-hidden">
+      <AnimatePresence>
+        {showShareSuccess && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-brand-accent text-white py-2 px-6 rounded-full text-[10px] font-black uppercase tracking-widest shadow-xl flex items-center gap-2 whitespace-nowrap"
+          >
+            <CheckCircle2 size={14} />
+            Details copied to clipboard!
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="px-6 flex items-center justify-between mb-6">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 -ml-2 hover:bg-brand-surface rounded-xl transition-colors"><ArrowLeft size={24} /></button>
+          <div>
+            <h2 className="text-xl font-bold text-brand-text">Order #{orderId}</h2>
+            <p className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-brand-accent' : 'text-green-600'}`}>
+              {details.status}
+            </p>
+          </div>
         </div>
+        <button 
+          onClick={handleShare}
+          className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center text-brand-accent shadow-sm border border-brand-accent/5 hover:bg-brand-accent hover:text-white transition-all active:scale-95"
+        >
+          <Share2 size={20} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 space-y-6 pb-32 no-scrollbar">
+        {isActive && <LiveMap />}
+
         {isActive && (
           <section className="bg-brand-accent rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
             <div className="absolute right-[-20px] top-[-20px] opacity-10">
@@ -1101,16 +1492,56 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
 
         {!isActive && (
           <section className="card p-0 overflow-hidden border-none shadow-md">
-            <div className="bg-brand-surface p-5 flex justify-between items-center">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-brand-muted block mb-0.5">Amount Paid</span>
-                <span className="text-lg font-black text-brand-accent">{details.amount}</span>
+            <div className="bg-brand-surface p-5 flex justify-between items-center relative">
+              <div className="flex items-center gap-2">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-widest text-brand-muted block mb-0.5">Amount Paid</span>
+                  <span className="text-lg font-black text-brand-accent">{details.amount}</span>
+                </div>
+                <button 
+                  onClick={() => setShowBreakdown(!showBreakdown)}
+                  className="p-1 text-brand-muted hover:text-brand-accent transition-colors"
+                >
+                  <Info size={14} />
+                </button>
               </div>
               <div className="flex items-center gap-1.5 bg-green-100 px-3 py-1 rounded-full">
                  <div className="w-1.5 h-1.5 bg-green-600 rounded-full" />
                  <span className="text-[10px] font-bold text-green-700 uppercase tracking-wider">Paid</span>
               </div>
             </div>
+            
+            <AnimatePresence>
+              {showBreakdown && (
+                <motion.div 
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden bg-brand-surface/50 border-t border-brand-secondary/10 px-5 py-4 space-y-2"
+                >
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                    <span>Job Cost</span>
+                    <span className="text-brand-text">$95.00</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                    <span>Visiting Charges</span>
+                    <span className="text-brand-text">$15.00</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                    <span>Platform Fees</span>
+                    <span className="text-brand-text">$5.00</span>
+                  </div>
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                    <span>Taxes (GST)</span>
+                    <span className="text-brand-text">$10.00</span>
+                  </div>
+                  <div className="pt-2 border-t border-brand-secondary/10 flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Total Paid</span>
+                    <span className="text-xs font-black text-brand-accent">{details.amount}</span>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             
             <div className="p-5 space-y-4 bg-white">
               <div className="flex justify-between items-center px-1">
@@ -1137,7 +1568,7 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
                     <div className="text-center p-4 bg-brand-surface rounded-2xl border border-dashed border-brand-secondary/50 mb-4">
                        <p className="text-xs font-bold text-brand-accent mb-2">Final Step: Mark as Complete</p>
                        <button 
-                         onClick={() => setHasReviewed(true)}
+                         onClick={() => setShowConfirm(true)}
                          className="btn-primary w-full py-3 text-xs uppercase tracking-widest font-black shadow-lg shadow-brand-accent/20"
                        >
                          Mark as Complete
@@ -1171,9 +1602,137 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
           </section>
         )}
 
-        <button className="w-full font-bold text-brand-accent/60 text-[10px] uppercase tracking-[0.2em] mb-4">
-           {isActive ? "Need Help with this order?" : "Download Full Receipt"}
+        {isActive && (
+          <section className="pt-2 pb-2">
+             <div className="text-center p-4 bg-brand-accent/5 rounded-2xl border border-dashed border-brand-accent/20">
+               <p className="text-xs font-bold text-brand-accent mb-3">Job finished? Close the request.</p>
+               <button 
+                onClick={() => setShowConfirm(true)}
+                className="btn-primary w-full py-4 text-xs uppercase tracking-widest font-black shadow-lg shadow-brand-accent/20"
+               >
+                 Mark as Complete
+               </button>
+             </div>
+          </section>
+        )}
+
+        <button 
+          onClick={isActive ? onSupport : handleDownloadReceipt}
+          disabled={isDownloading}
+          className="w-full font-bold text-brand-accent text-[10px] uppercase tracking-[0.2em] mb-4 hover:bg-brand-accent/5 py-4 rounded-2xl transition-all border border-brand-accent/20 flex items-center justify-center gap-2"
+        >
+           {isDownloading ? (
+             <>
+               <Clock size={14} className="animate-spin" />
+               Generating Receipt...
+             </>
+           ) : (
+             <>
+               {!isActive && <FileText size={14} />}
+               {isActive ? "Need Help with this order?" : "Download Full Receipt"}
+             </>
+           )}
         </button>
+
+        {isActive && (
+          <button 
+            onClick={() => setShowCancelConfirm(true)}
+            className="w-full font-bold text-red-500/60 text-[10px] uppercase tracking-[0.2em] mb-8 hover:text-red-500 transition-colors flex items-center justify-center gap-2"
+          >
+            <XCircle size={14} />
+            Cancel Request
+          </button>
+        )}
+
+        <AnimatePresence>
+          {showCancelConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="bg-white rounded-[40px] p-8 w-full max-w-sm shadow-2xl text-center"
+              >
+                <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6 text-red-500">
+                  <XCircle size={32} />
+                </div>
+                <h3 className="text-xl font-bold mb-3 text-brand-text">Cancel Job Request?</h3>
+                
+                <div className="bg-brand-surface rounded-2xl p-4 mb-8 text-left border border-brand-secondary/10">
+                   <div className="flex items-start gap-3">
+                      <Info size={18} className="text-brand-accent mt-0.5 shrink-0" />
+                      <div>
+                         <p className="text-xs font-black uppercase text-brand-accent tracking-wider mb-1">Cancellation Policy</p>
+                         <p className="text-[11px] font-medium text-brand-muted leading-relaxed">
+                            {isLateCancellation ? (
+                              <span className="text-red-500 font-bold">50% charge will apply as less than 4 hours remain.</span>
+                            ) : (
+                              "Free cancellation as more than 4 hours remain before the service slot."
+                            )}
+                         </p>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => setShowCancelConfirm(false)}
+                    className="py-4 text-xs font-black uppercase tracking-widest text-brand-muted bg-brand-surface rounded-2xl"
+                  >
+                    Go Back
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setShowCancelConfirm(false);
+                      onBack(); // Simulate cancellation by going back
+                    }}
+                    className="py-4 text-xs font-black uppercase tracking-widest text-white bg-red-500 rounded-2xl shadow-lg shadow-red-500/20"
+                  >
+                    Confirm
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showConfirm && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="bg-white rounded-[32px] p-8 w-full max-w-xs shadow-2xl text-center"
+              >
+                <div className="w-16 h-16 bg-brand-accent/10 rounded-full flex items-center justify-center mx-auto mb-6 text-brand-accent">
+                  <CheckCircle2 size={32} />
+                </div>
+                <h3 className="text-xl font-bold mb-2">Confirm Job Completion</h3>
+                <p className="text-sm text-brand-muted mb-8 leading-relaxed">
+                  Are you sure the pro has finished the job to your satisfaction? This will finalize the service and process payment.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => setShowConfirm(false)}
+                    className="py-4 text-xs font-black uppercase tracking-widest text-brand-muted bg-brand-surface rounded-2xl"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setHasReviewed(true);
+                      setShowConfirm(false);
+                    }}
+                    className="py-4 text-xs font-black uppercase tracking-widest text-white bg-brand-accent rounded-2xl shadow-lg"
+                  >
+                    Yes, Complete
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -1307,7 +1866,110 @@ function SupportChatScreen({ history, onUpdate, onBack }: { history: ChatMessage
   );
 }
 
-function ProfileScreen({ onBack, onSupport }: { onBack: () => void, onSupport: () => void }) {
+function LiveMap() {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="relative w-full h-56 bg-slate-100 rounded-[32px] overflow-hidden border border-brand-accent/5 shadow-inner mb-2"
+    >
+      {/* Grid Pattern Background to simulate map */}
+      <div className="absolute inset-0 opacity-[0.03]" style={{ 
+        backgroundImage: 'radial-gradient(#2D336B 1px, transparent 1px)', 
+        backgroundSize: '24px 24px' 
+      }} />
+      
+      {/* Simulated Road Path */}
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 200">
+        <path
+          d="M 50 150 Q 150 150, 150 100 T 350 50"
+          fill="transparent"
+          stroke="#2D336B"
+          strokeWidth="4"
+          strokeLinecap="round"
+          opacity="0.1"
+        />
+        <motion.path
+          d="M 50 150 Q 150 150, 150 100 T 350 50"
+          fill="transparent"
+          stroke="#2D336B"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeDasharray="10 5"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+        />
+      </svg>
+
+      {/* Destination Marker (User Home) */}
+      <div className="absolute top-[40px] right-[40px] z-10">
+        <div className="relative">
+          <div className="absolute inset-0 bg-brand-accent/20 rounded-full animate-ping scale-150" />
+          <div className="bg-brand-accent p-2 rounded-xl text-white shadow-lg relative z-10">
+            <Home size={16} />
+          </div>
+          <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-white px-2 py-1 rounded-lg shadow-md border border-brand-accent/5 whitespace-nowrap">
+            <span className="text-[8px] font-black uppercase text-brand-text">Your Home</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Worker Marker (Moving Pro) */}
+      <motion.div 
+        className="absolute bottom-[140px] left-[40px] z-20"
+        animate={{ 
+          x: [0, 80, 80, 260],
+          y: [0, 0, -40, -80]
+        }}
+        transition={{ 
+          duration: 20, 
+          repeat: Infinity,
+          ease: "linear"
+        }}
+      >
+        <div className="relative flex flex-col items-center">
+          <div className="bg-brand-accent px-2 py-1 rounded-full text-[8px] font-black text-white uppercase tracking-tighter mb-1 shadow-sm border border-white/20">
+            Elena (Pro)
+          </div>
+          <div className="w-10 h-10 bg-white rounded-2xl shadow-xl flex items-center justify-center text-brand-accent border-2 border-brand-accent/5">
+            <div className="relative">
+               <MapPin size={24} className="fill-brand-accent/10" />
+               <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full border-2 border-white" />
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Map Content Overlays */}
+      <div className="absolute bottom-4 left-4 right-4 flex justify-between items-end">
+        <div className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-brand-accent/5 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-brand-accent/10 flex items-center justify-center text-brand-accent">
+            <Clock size={16} />
+          </div>
+          <div>
+            <p className="text-[9px] font-black uppercase text-brand-accent tracking-tighter mb-0.5">Live Traffic</p>
+            <p className="text-xs font-bold text-brand-text">12 mins away</p>
+          </div>
+        </div>
+        <button className="bg-white/95 backdrop-blur-md p-3 rounded-2xl shadow-lg border border-brand-accent/5 text-brand-accent active:scale-95 transition-transform">
+          <Maximize2 size={16} />
+        </button>
+      </div>
+    </motion.div>
+  );
+}
+
+function ProfileScreen({ onBack, onSupport, onAddresses, onPayments, onNotifications, onLegal, onChatHistory, onLogout }: { 
+  onBack: () => void, 
+  onSupport: () => void, 
+  onAddresses: () => void, 
+  onPayments: () => void,
+  onNotifications: () => void,
+  onLegal: () => void,
+  onChatHistory: () => void,
+  onLogout: () => void
+}) {
   return (
     <div className="h-full px-6 pt-12 pb-32 overflow-y-auto no-scrollbar">
       <h2 className="text-2xl font-bold mb-8">Account</h2>
@@ -1323,19 +1985,439 @@ function ProfileScreen({ onBack, onSupport }: { onBack: () => void, onSupport: (
       </div>
 
       <div className="space-y-1">
-        {["Addresses", "Payment Methods", "Notifications", "Support", "Legal"].map(t => (
+        {["Addresses", "Payment Methods", "Notifications", "Chat History", "Support", "Legal"].map(t => (
           <div 
             key={t} 
-            onClick={() => t === 'Support' ? onSupport() : null}
+            onClick={() => {
+              if (t === 'Support') onSupport();
+              if (t === 'Addresses') onAddresses();
+              if (t === 'Payment Methods') onPayments();
+              if (t === 'Notifications') onNotifications();
+              if (t === 'Legal') onLegal();
+              if (t === 'Chat History') onChatHistory();
+            }}
             className="flex justify-between items-center py-5 px-4 hover:bg-brand-surface transition-colors cursor-pointer border-b border-brand-secondary/20 last:border-b-0 rounded-xl"
           >
              <span className="font-bold text-sm text-brand-text/80">{t}</span>
              <ChevronRight size={18} className="text-brand-muted" />
           </div>
         ))}
-        <button className="w-full text-left py-6 px-4 font-black text-red-500 text-xs uppercase tracking-[0.2em] mt-8 border-t border-brand-secondary/20">
+        <button 
+          onClick={onLogout}
+          className="w-full text-left py-6 px-4 font-black text-red-500 text-xs uppercase tracking-[0.2em] mt-8 border-t border-brand-secondary/20 hover:bg-red-50 transition-colors"
+        >
           Sign Out
         </button>
+      </div>
+    </div>
+  );
+}
+
+function AddressListScreen({ addresses, onUpdate, onBack }: { addresses: Address[], onUpdate: (addrs: Address[]) => void, onBack: () => void }) {
+  const [editingAddr, setEditingAddr] = useState<Address | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newPath, setNewPath] = useState('');
+
+  const handleDelete = (id: string) => {
+    onUpdate(addresses.filter(a => a.id !== id));
+  };
+
+  const handleSetDefault = (id: string) => {
+    onUpdate(addresses.map(a => ({
+      ...a,
+      isDefault: a.id === id
+    })));
+  };
+
+  const handleSave = () => {
+    if (!newLabel || !newPath) return;
+
+    if (editingAddr) {
+      onUpdate(addresses.map(a => a.id === editingAddr.id ? { ...a, label: newLabel, fullAddress: newPath } : a));
+    } else {
+      const newAddr: Address = {
+        id: Date.now().toString(),
+        label: newLabel,
+        fullAddress: newPath,
+        isDefault: addresses.length === 0
+      };
+      onUpdate([...addresses, newAddr]);
+    }
+    
+    setEditingAddr(null);
+    setShowAddForm(false);
+    setNewLabel('');
+    setNewPath('');
+  };
+
+  const startEdit = (addr: Address) => {
+    setEditingAddr(addr);
+    setNewLabel(addr.label);
+    setNewPath(addr.fullAddress);
+    setShowAddForm(true);
+  };
+
+  return (
+    <div className="h-full flex flex-col pt-12 bg-brand-bg">
+      <div className="px-6 flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+          <h2 className="text-xl font-bold">Saved Addresses</h2>
+        </div>
+        {!showAddForm && (
+          <button 
+            onClick={() => {
+              setEditingAddr(null);
+              setNewLabel('');
+              setNewPath('');
+              setShowAddForm(true);
+            }} 
+            className="p-2 bg-brand-accent text-white rounded-full shadow-lg"
+          >
+            <Plus size={20} />
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-12 no-scrollbar">
+        {showAddForm ? (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="card p-6 space-y-4 bg-white border-none shadow-xl rounded-[32px]"
+          >
+            <h3 className="text-sm font-black uppercase tracking-widest text-brand-accent">
+              {editingAddr ? "Update Address" : "New Address"}
+            </h3>
+            <div className="space-y-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-brand-muted ml-1">Label (e.g. Home, Mom's House)</label>
+                <input 
+                  type="text" 
+                  className="w-full p-4 bg-brand-surface rounded-2xl border border-brand-secondary/30 outline-none focus:border-brand-accent transition-all"
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="Home"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase tracking-widest text-brand-muted ml-1">Full Address</label>
+                <textarea 
+                  className="w-full p-4 bg-brand-surface rounded-2xl border border-brand-secondary/30 outline-none focus:border-brand-accent transition-all h-24 resize-none"
+                  value={newPath}
+                  onChange={(e) => setNewPath(e.target.value)}
+                  placeholder="123 Street Name, Area, City"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 pt-2">
+               <button 
+                onClick={() => setShowAddForm(false)}
+                className="flex-1 py-4 text-xs font-black uppercase tracking-widest text-brand-muted bg-brand-surface rounded-2xl"
+               >
+                 Cancel
+               </button>
+               <button 
+                onClick={handleSave}
+                disabled={!newLabel || !newPath}
+                className="flex-2 py-4 text-xs font-black uppercase tracking-widest text-white bg-brand-accent rounded-2xl shadow-lg disabled:opacity-50"
+               >
+                 Save Address
+               </button>
+            </div>
+          </motion.div>
+        ) : (
+          addresses.map(addr => (
+            <div key={addr.id} className="card p-5 bg-white border-none shadow-sm flex items-start gap-4 group">
+               <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${addr.isDefault ? 'bg-brand-accent text-white' : 'bg-brand-surface text-brand-muted'}`}>
+                  <Home size={18} />
+               </div>
+               <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                     <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-brand-text">{addr.label}</h4>
+                        {addr.isDefault && (
+                          <span className="text-[8px] font-black bg-brand-accent/10 text-brand-accent px-1.5 py-0.5 rounded uppercase tracking-wider">Default</span>
+                        )}
+                     </div>
+                     <div className="flex gap-2">
+                        <button onClick={() => startEdit(addr)} className="text-brand-muted hover:text-brand-accent transition-colors font-bold text-[10px] uppercase">Edit</button>
+                        {!addr.isDefault && (
+                          <button onClick={() => handleDelete(addr.id)} className="text-red-400 hover:text-red-600 transition-colors font-bold text-[10px] uppercase">Delete</button>
+                        )}
+                     </div>
+                  </div>
+                  <p className="text-xs text-brand-muted mt-1 leading-relaxed">{addr.fullAddress}</p>
+                  {!addr.isDefault && (
+                    <button 
+                      onClick={() => handleSetDefault(addr.id)}
+                      className="mt-3 text-[10px] font-black text-brand-accent uppercase tracking-widest border-b border-brand-accent/20 pb-0.5"
+                    >
+                      Set as default
+                    </button>
+                  )}
+               </div>
+            </div>
+          ))
+        )}
+
+        {!showAddForm && addresses.length === 0 && (
+          <div className="text-center py-20">
+             <div className="w-16 h-16 bg-brand-surface rounded-full flex items-center justify-center mx-auto mb-4 text-brand-muted">
+                <MapPin size={24} />
+             </div>
+             <p className="text-sm font-bold text-brand-text">No addresses saved yet</p>
+             <p className="text-xs text-brand-muted mt-2">Add your first address to speed up bookings.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PaymentMethodsScreen({ onBack }: { onBack: () => void }) {
+  const options = [
+    { id: 'card', title: 'Add Credit/Debit Card', subtitle: 'Visa, Mastercard, RuPay & more', icon: <CreditCard size={20} /> },
+    { id: 'upi', title: 'Pay via UPI Apps', subtitle: 'Google Pay, PhonePe, Paytm', icon: <Smartphone size={20} /> },
+    { id: 'wallet', title: 'Pay via Wallet', subtitle: 'Paytm, Amazon Pay, Mobikwik', icon: <Wallet size={20} /> },
+    { id: 'cash', title: 'Pay with Cash', subtitle: 'Pay after service is completed', icon: <Banknote size={20} /> }
+  ];
+
+  return (
+    <div className="h-full flex flex-col pt-12 bg-brand-bg">
+      <div className="px-6 flex items-center gap-4 mb-8">
+        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+        <h2 className="text-xl font-bold">Payment Methods</h2>
+      </div>
+
+      <div className="px-6 space-y-4">
+        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-brand-muted mb-6 ml-1">Choose a Payment Option</div>
+        
+        {options.map((opt) => (
+          <div 
+            key={opt.id} 
+            className="card p-5 bg-white border-none shadow-sm flex items-center gap-4 hover:bg-brand-surface transition-all cursor-pointer group active:scale-[0.98]"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-brand-surface text-brand-accent flex items-center justify-center group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
+              {opt.icon}
+            </div>
+            <div className="flex-1">
+               <h4 className="font-bold text-brand-text text-sm">{opt.title}</h4>
+               <p className="text-[10px] text-brand-muted font-medium mt-0.5">{opt.subtitle}</p>
+            </div>
+            <ChevronRight size={16} className="text-brand-muted/40 group-hover:translate-x-1 transition-transform" />
+          </div>
+        ))}
+
+        <div className="mt-12 p-6 bg-brand-accent/5 rounded-[32px] border border-dashed border-brand-accent/20">
+           <div className="flex items-center gap-3 mb-3">
+              <ShieldCheck size={18} className="text-brand-accent" />
+              <h5 className="text-xs font-black uppercase tracking-widest text-brand-accent">Secure Payments</h5>
+           </div>
+           <p className="text-[10px] text-brand-accent/70 font-medium leading-relaxed">
+             Your payment details are encrypted and securely stored. We do not share your private financial information.
+           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationsScreen({ notifications, onBack, onMarkRead }: { notifications: Notification[], onBack: () => void, onMarkRead: (id: string) => void }) {
+  const getIcon = (type: string) => {
+    switch (type) {
+      case 'ORDER': return <Package size={18} />;
+      case 'PROMO': return <Tag size={18} />;
+      default: return <Settings size={18} />;
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col pt-12 bg-brand-bg">
+      <div className="px-6 flex items-center justify-between mb-8">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+          <h2 className="text-xl font-bold">Notifications</h2>
+        </div>
+        <div className="w-10 h-10 bg-brand-surface rounded-full flex items-center justify-center text-brand-accent relative">
+           <Bell size={20} />
+           {notifications.some(n => n.isUnread) && (
+             <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-brand-surface" />
+           )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 space-y-3 pb-12 no-scrollbar">
+        {notifications.map((notif) => (
+          <div 
+            key={notif.id} 
+            onClick={() => onMarkRead(notif.id)}
+            className={`card p-5 border-none transition-all cursor-pointer relative overflow-hidden group ${notif.isUnread ? 'bg-white shadow-md' : 'bg-brand-surface/50 opacity-80'}`}
+          >
+             {notif.isUnread && (
+               <div className="absolute left-0 top-0 bottom-0 w-1 bg-brand-accent" />
+             )}
+             <div className="flex gap-4">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${notif.isUnread ? 'bg-brand-accent/10 text-brand-accent' : 'bg-gray-100 text-gray-400'}`}>
+                   {getIcon(notif.type)}
+                </div>
+                <div className="flex-1">
+                   <div className="flex justify-between items-start mb-1">
+                      <h4 className={`text-sm font-bold ${notif.isUnread ? 'text-brand-text' : 'text-brand-muted'}`}>{notif.title}</h4>
+                      <span className="text-[9px] font-bold text-brand-muted uppercase tracking-wider">{notif.time}</span>
+                   </div>
+                   <p className="text-xs text-brand-muted leading-relaxed">{notif.message}</p>
+                </div>
+             </div>
+          </div>
+        ))}
+
+        {notifications.length === 0 && (
+          <div className="text-center py-20">
+             <div className="w-16 h-16 bg-brand-surface rounded-full flex items-center justify-center mx-auto mb-4 text-brand-muted">
+                <Bell size={24} />
+             </div>
+             <p className="text-sm font-bold text-brand-text">All caught up!</p>
+             <p className="text-xs text-brand-muted mt-2">No new notifications for you right now.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LegalScreen({ onBack, onOpenTerms, onOpenPrivacy }: { onBack: () => void, onOpenTerms: () => void, onOpenPrivacy: () => void }) {
+  const options = [
+    { title: "Terms and Conditions", action: onOpenTerms },
+    { title: "Privacy Policy", action: onOpenPrivacy }
+  ];
+
+  return (
+    <div className="h-full flex flex-col pt-12 bg-brand-bg">
+      <div className="px-6 flex items-center gap-4 mb-8">
+        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+        <h2 className="text-xl font-bold">Legal</h2>
+      </div>
+
+      <div className="px-6 space-y-4">
+        {options.map((opt, i) => (
+          <div 
+            key={i} 
+            onClick={opt.action}
+            className="card p-5 bg-white border-none shadow-sm flex items-center justify-between hover:bg-brand-surface transition-all cursor-pointer group active:scale-[0.98] rounded-2xl"
+          >
+            <span className="font-bold text-brand-text text-sm">{opt.title}</span>
+            <ChevronRight size={18} className="text-brand-muted/40 group-hover:translate-x-1 transition-transform" />
+          </div>
+        ))}
+        
+        <div className="mt-12 text-center">
+           <p className="text-[10px] text-brand-muted font-bold uppercase tracking-[0.2em]">Version 1.4.2 (App Store)</p>
+           <p className="text-[9px] text-brand-muted mt-2 opacity-50">© 2026 Fixify Technologies Inc.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentScreen({ title, content, onBack }: { title: string, content: string, onBack: () => void }) {
+  return (
+    <div className="h-full flex flex-col pt-12 bg-white">
+      <div className="px-6 flex items-center gap-4 mb-6 sticky top-0 py-2 bg-white z-10">
+        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+        <h2 className="text-xl font-bold">{title}</h2>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 pb-20 no-scrollbar">
+        <div className="prose prose-sm max-w-none text-brand-text/80 font-medium leading-relaxed space-y-6">
+           {content.split('\n\n').map((paragraph, i) => (
+             <p key={i}>{paragraph}</p>
+           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TERMS_CONTENT = `Last Updated: April 2026
+
+1. ACCEPTANCE OF TERMS
+By accessing or using the Fixify mobile application (the "App") and the services provided through it (the "Services"), you agree to be bound by these Terms and Conditions.
+
+2. DESCRIPTION OF SERVICES
+Fixify provides a platform that connects users ("Customers") with third-party service providers ("Pros") for home maintenance, repair, and other professional services. Fixify does not provide the professional services itself.
+
+3. USER RESPONSIBILITIES
+You must be at least 18 years old to use the Services. You agree to provide accurate, current, and complete information during the registration process and to update such information to keep it accurate.
+
+4. PAYMENTS AND CANCELLATIONS
+Customers agree to pay the fees quoted for each service. Cancellations must be made within the timeframes specified in the App. Late cancellations may be subject to a fee.
+
+5. LIMITATION OF LIABILITY
+To the maximum extent permitted by law, Fixify shall not be liable for any indirect, incidental, special, consequential, or punitive damages, or any loss of profits or revenues.
+
+6. CONTACT US
+If you have any questions about these Terms, please contact us at legal@fixify.com.`;
+
+const PRIVACY_POLICY_CONTENT = `Last Updated: April 2026
+
+1. INFORMATION WE COLLECT
+We collect information you provide directly to us, such as your name, email address, phone number, and address when you create an account. We also collect location data to match you with nearby Pros.
+
+2. HOW WE USE YOUR INFORMATION
+We use the information we collect to provide, maintain, and improve our Services, to process transactions, and to communicate with you about your bookings and promotional offers.
+
+3. DATA SHARING
+We share your information with the Pros you choose to book so they can provide the requested services. We do not sell your personal data to third parties for marketing purposes.
+
+4. DATA SECURITY
+We take reasonable measures to help protect information about you from loss, theft, misuse, and unauthorized access, disclosure, alteration, and destruction.
+
+5. YOUR CHOICES
+You may update your account information at any time through the App settings. You can also request deletion of your account by contacting support.
+
+6. CHANGES TO THIS POLICY
+We may change this Privacy Policy from time to time. If we make changes, we will notify you by revising the date at the top of the policy.`;
+
+function ChatHistoryScreen({ onBack, onSelectChat }: { onBack: () => void, onSelectChat: (id: string) => void }) {
+  const histories = [
+    { id: '1', title: 'Plumbing Issue', date: 'April 20, 2026', lastMsg: 'Your pro is on their way.', status: 'Closed' },
+    { id: '2', title: 'Electrical Sparks', date: 'March 15, 2026', lastMsg: 'Thank you for choosing Fixify.', status: 'Closed' },
+    { id: '3', title: 'AC Not Cooling', date: 'Feb 10, 2026', lastMsg: 'The issue was with the filter.', status: 'Closed' }
+  ];
+
+  return (
+    <div className="h-full flex flex-col pt-12 bg-brand-bg">
+      <div className="px-6 flex items-center gap-4 mb-8">
+        <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+        <h2 className="text-xl font-bold">Chat History</h2>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 space-y-4 pb-12 no-scrollbar">
+        {histories.map((chat) => (
+          <div 
+            key={chat.id} 
+            onClick={() => onSelectChat(chat.id)}
+            className="card p-5 bg-white border-none shadow-sm flex items-start gap-4 hover:bg-brand-surface transition-all cursor-pointer group active:scale-[0.98] rounded-2xl"
+          >
+             <div className="w-12 h-12 rounded-2xl bg-brand-surface text-brand-accent flex items-center justify-center shrink-0 group-hover:bg-brand-accent group-hover:text-white transition-colors duration-300">
+                <MessageCircle size={22} />
+             </div>
+             <div className="flex-1">
+                <div className="flex justify-between items-start mb-1">
+                   <h4 className="font-bold text-brand-text text-sm">{chat.title}</h4>
+                   <span className="text-[9px] font-bold text-brand-muted uppercase tracking-wider">{chat.date}</span>
+                </div>
+                <p className="text-xs text-brand-muted line-clamp-1">{chat.lastMsg}</p>
+                <div className="flex items-center gap-1.5 mt-2">
+                   <div className="w-1.5 h-1.5 rounded-full bg-gray-300" />
+                   <span className="text-[10px] font-bold text-brand-muted uppercase tracking-widest">{chat.status}</span>
+                </div>
+             </div>
+             <ChevronRight size={16} className="text-brand-muted/40 self-center" />
+          </div>
+        ))}
       </div>
     </div>
   );
