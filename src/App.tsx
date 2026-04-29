@@ -21,14 +21,23 @@ import {
   AlertCircle,
   Image as ImageIcon,
   Mic,
-  MoreVertical
+  MoreVertical,
+  Send,
+  Sparkles
 } from 'lucide-react';
 
 // --- Types ---
 type Screen = 
   | 'SPLASH' | 'LOGIN' | 'OTP' | 'HOME' | 'CATEGORIES' | 'PRO_LIST'
   | 'UPLOAD' | 'NOTE' | 'AI_PREFILL' | 'ADDRESS' 
-  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'PROFILE';
+  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'PROFILE';
+
+interface ChatMessage {
+  id: number;
+  text: string;
+  sender: 'bot' | 'user';
+  timestamp: string;
+}
 
 interface AppState {
   screen: Screen;
@@ -36,6 +45,7 @@ interface AppState {
   note: string;
   selectedCategory: string | null;
   selectedOrderId: string | null;
+  chatMessages: ChatMessage[];
   issueData: {
     type: string;
     service: string;
@@ -57,6 +67,7 @@ export default function App() {
     note: '',
     selectedCategory: null,
     selectedOrderId: null,
+    chatMessages: JSON.parse(localStorage.getItem('fixify_chat') || '[]'),
     issueData: {
       type: 'Water Leakage',
       service: 'Plumbing',
@@ -82,7 +93,13 @@ export default function App() {
   };
 
   const updateState = (updates: Partial<AppState>) => {
-    setState(prev => ({ ...prev, ...updates }));
+    setState(prev => {
+      const newState = { ...prev, ...updates };
+      if (updates.chatMessages) {
+        localStorage.setItem('fixify_chat', JSON.stringify(newState.chatMessages));
+      }
+      return newState;
+    });
   };
 
   // Screen Rendering Logic
@@ -103,7 +120,8 @@ export default function App() {
       case 'CONFIRMATION': return <ConfirmationScreen onNext={() => navigate('ORDERS')} />;
       case 'ORDERS': return <OrdersScreen onBack={() => navigate('HOME')} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
       case 'ORDER_DETAILS': return <OrderDetailsScreen orderId={state.selectedOrderId || ''} onBack={() => navigate('ORDERS')} />;
-      case 'PROFILE': return <ProfileScreen onBack={() => navigate('HOME')} />;
+      case 'SUPPORT_CHAT': return <SupportChatScreen history={state.chatMessages} onUpdate={(msgs) => updateState({ chatMessages: msgs })} onBack={() => navigate('PROFILE')} />;
+      case 'PROFILE': return <ProfileScreen onBack={() => navigate('HOME')} onSupport={() => navigate('SUPPORT_CHAT')} />;
       default: return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} />;
     }
   };
@@ -1084,11 +1102,24 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
         {!isActive && (
           <section className="card p-0 overflow-hidden border-none shadow-md">
             <div className="bg-brand-surface p-5 flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-widest text-brand-muted">Payment Detail</span>
-              <span className="text-lg font-black text-brand-accent">{details.amount}</span>
+              <div>
+                <span className="text-xs font-bold uppercase tracking-widest text-brand-muted block mb-0.5">Amount Paid</span>
+                <span className="text-lg font-black text-brand-accent">{details.amount}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-green-100 px-3 py-1 rounded-full">
+                 <div className="w-1.5 h-1.5 bg-green-600 rounded-full" />
+                 <span className="text-[10px] font-bold text-green-700 uppercase tracking-wider">Paid</span>
+              </div>
             </div>
             
             <div className="p-5 space-y-4 bg-white">
+              <div className="flex justify-between items-center px-1">
+                 <h3 className="text-xs font-bold uppercase tracking-widest text-brand-muted">Review Status</h3>
+                 <span className={`text-[10px] font-black uppercase tracking-widest ${hasReviewed ? 'text-green-600' : 'text-orange-500'}`}>
+                    {hasReviewed ? 'Review Given' : 'Ask for Review'}
+                 </span>
+              </div>
+
               {hasReviewed ? (
                 <div className="space-y-3">
                     <div className="flex justify-between items-center">
@@ -1102,7 +1133,17 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
                     </div>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-4 pt-2">
+                    <div className="text-center p-4 bg-brand-surface rounded-2xl border border-dashed border-brand-secondary/50 mb-4">
+                       <p className="text-xs font-bold text-brand-accent mb-2">Final Step: Mark as Complete</p>
+                       <button 
+                         onClick={() => setHasReviewed(true)}
+                         className="btn-primary w-full py-3 text-xs uppercase tracking-widest font-black shadow-lg shadow-brand-accent/20"
+                       >
+                         Mark as Complete
+                       </button>
+                    </div>
+
                     <div className="text-center">
                       <h3 className="text-sm font-bold text-brand-accent mb-1">Rate your experience</h3>
                       <p className="text-xs text-brand-muted">How was Elena's service today?</p>
@@ -1138,29 +1179,163 @@ function OrderDetailsScreen({ orderId, onBack }: { orderId: string, onBack: () =
   );
 }
 
-function ProfileScreen({ onBack }: { onBack: () => void }) {
+function SupportChatScreen({ history, onUpdate, onBack }: { history: ChatMessage[], onUpdate: (msgs: ChatMessage[]) => void, onBack: () => void }) {
+  const [messages, setMessages] = useState<ChatMessage[]>(history.length > 0 ? history : [
+    { id: 1, text: "Hi Akshay! I'm your Fixify AI assistant. How can I help you today?", sender: 'bot', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+  ]);
+  const [input, setInput] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+    // Sync with global state for persistence
+    onUpdate(messages);
+  }, [messages, isTyping]);
+
+  const handleSend = () => {
+    if (!input.trim()) return;
+    
+    const userMsg: ChatMessage = { 
+      id: Date.now(), 
+      text: input, 
+      sender: 'user',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setInput('');
+    setIsTyping(true);
+
+    // Simulate AI response
+    setTimeout(() => {
+      let response = "I'm looking into that for you. Is it regarding your active order #FIX-99021?";
+      if (input.toLowerCase().includes('refund')) {
+        response = "I understand you're looking for a refund. Let me check our policy for you. Our typical processing time is 3-5 business days.";
+      } else if (input.toLowerCase().includes('plumber')) {
+        response = "I can definitely help you find a plumber. You can also use the 'Fix' button to snap a photo and I'll match you automatically!";
+      }
+      
+      const botMsg: ChatMessage = { 
+        id: Date.now() + 1, 
+        text: response, 
+        sender: 'bot',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setIsTyping(false);
+    }, 1500);
+  };
+
+  const clearHistory = () => {
+    const initialMsg: ChatMessage = { id: 1, text: "Hi Akshay! I'm your Fixify AI assistant. How can I help you today?", sender: 'bot', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+    setMessages([initialMsg]);
+    onUpdate([initialMsg]);
+  };
+
   return (
-    <div className="h-full px-6 pt-12">
+    <div className="h-full flex flex-col pt-12 bg-white">
+      <div className="px-6 flex items-center justify-between mb-4 border-b border-brand-secondary/30 pb-4">
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="p-2 -ml-2"><ArrowLeft size={24} /></button>
+          <div className="flex items-center gap-2">
+             <div className="w-8 h-8 rounded-full bg-brand-accent flex items-center justify-center text-white">
+                <Sparkles size={16} />
+             </div>
+             <div>
+                <h2 className="text-sm font-bold">Fixify AI Support</h2>
+                <div className="flex items-center gap-1">
+                   <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                   <span className="text-[10px] font-bold text-brand-muted uppercase">Always Online</span>
+                </div>
+             </div>
+          </div>
+        </div>
+        <button onClick={clearHistory} className="text-[10px] font-black text-brand-muted uppercase tracking-widest hover:text-red-500 transition-colors">
+          Clear
+        </button>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 space-y-6 py-4 no-scrollbar">
+        {messages.map((m, idx) => {
+          const showTime = idx === 0 || messages[idx-1].timestamp !== m.timestamp;
+          return (
+            <div key={m.id} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+              {showTime && <p className="text-[9px] font-black text-brand-muted uppercase tracking-widest mb-1 mx-2">{m.timestamp}</p>}
+              <div className={`max-w-[85%] px-4 py-3 rounded-2xl text-sm font-medium shadow-sm transition-all ${
+                m.sender === 'user' 
+                  ? 'bg-brand-accent text-white rounded-tr-none' 
+                  : 'bg-brand-surface text-brand-text rounded-tl-none border border-brand-secondary/20'
+              }`}>
+                {m.text}
+              </div>
+            </div>
+          );
+        })}
+        {isTyping && (
+          <div className="flex justify-start">
+            <div className="bg-brand-surface px-4 py-3 rounded-2xl rounded-tl-none border border-brand-secondary/20 flex gap-1 items-center">
+              <div className="w-1 h-1 bg-brand-muted rounded-full animate-bounce" />
+              <div className="w-1 h-1 bg-brand-muted rounded-full animate-bounce [animation-delay:0.2s]" />
+              <div className="w-1 h-1 bg-brand-muted rounded-full animate-bounce [animation-delay:0.4s]" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-6 border-t border-brand-secondary/20 flex gap-3 items-end">
+        <div className="flex-1 bg-brand-surface rounded-2xl border border-brand-secondary/30 flex items-center px-4 py-3">
+          <textarea 
+            rows={1}
+            placeholder="Type your message..." 
+            className="flex-1 bg-transparent border-none outline-none text-sm resize-none"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+          />
+        </div>
+        <button 
+          onClick={handleSend}
+          disabled={!input.trim()}
+          className="w-12 h-12 bg-brand-accent text-white rounded-xl flex items-center justify-center shadow-lg disabled:opacity-50 transition-opacity"
+        >
+          <Send size={20} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileScreen({ onBack, onSupport }: { onBack: () => void, onSupport: () => void }) {
+  return (
+    <div className="h-full px-6 pt-12 pb-32 overflow-y-auto no-scrollbar">
       <h2 className="text-2xl font-bold mb-8">Account</h2>
-      <div className="flex items-center gap-4 mb-10 pb-10 border-bottom border-brand-secondary">
-         <div className="w-20 h-20 rounded-[28px] bg-brand-accent flex items-center justify-center text-white text-3xl font-black">
+      <div className="flex items-center gap-4 mb-10 pb-10 border-b border-brand-secondary/30">
+         <div className="w-16 h-16 rounded-[22px] bg-brand-accent flex items-center justify-center text-white text-2xl font-black shadow-lg">
            AG
          </div>
          <div>
-            <p className="font-bold text-xl">Akshay Goyal</p>
-            <p className="text-sm text-brand-muted">akshay@fixify.com</p>
-            <button className="text-brand-accent text-xs font-bold mt-1">Edit Profile</button>
+            <p className="font-extrabold text-lg text-brand-accent">Akshay Goyal</p>
+            <p className="text-xs text-brand-muted font-medium">akshay@fixify.com</p>
+            <button className="text-brand-accent text-[10px] font-black uppercase tracking-widest mt-2 border-b border-brand-accent/30 pb-0.5">Edit Profile</button>
          </div>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1">
         {["Addresses", "Payment Methods", "Notifications", "Support", "Legal"].map(t => (
-          <div key={t} className="card py-5 flex justify-between items-center hover:bg-brand-bg transition-colors cursor-pointer border-none shadow-none border-b border-brand-secondary rounded-none">
-             <span className="font-semibold text-brand-text">{t}</span>
+          <div 
+            key={t} 
+            onClick={() => t === 'Support' ? onSupport() : null}
+            className="flex justify-between items-center py-5 px-4 hover:bg-brand-surface transition-colors cursor-pointer border-b border-brand-secondary/20 last:border-b-0 rounded-xl"
+          >
+             <span className="font-bold text-sm text-brand-text/80">{t}</span>
              <ChevronRight size={18} className="text-brand-muted" />
           </div>
         ))}
-        <button className="w-full text-left py-5 px-4 font-bold text-red-500 mt-8">Sign Out</button>
+        <button className="w-full text-left py-6 px-4 font-black text-red-500 text-xs uppercase tracking-[0.2em] mt-8 border-t border-brand-secondary/20">
+          Sign Out
+        </button>
       </div>
     </div>
   );
