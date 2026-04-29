@@ -24,6 +24,7 @@ import {
   MoreVertical,
   Send,
   Sparkles,
+  Star,
   CreditCard,
   Smartphone,
   Wallet,
