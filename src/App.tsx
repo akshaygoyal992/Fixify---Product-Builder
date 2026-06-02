@@ -1740,7 +1740,7 @@ function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => 
       </div>
 
       <button onClick={() => onNext(note)} className="btn-primary w-full shadow-lg">
-        Continue
+        AI to Pre-Fill Details
       </button>
     </div>
   );
