@@ -60,6 +60,41 @@ interface TaxDetails {
   description: string;
 }
 
+function compressImage(dataUrl: string, maxDim = 800, quality = 0.8): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = dataUrl;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } else {
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => {
+      resolve(dataUrl);
+    };
+  });
+}
+
 function getGSTDetailsByService(service: string): TaxDetails {
   const norm = (service || '').toLowerCase();
   if (norm.includes('plumb')) {
@@ -846,8 +881,9 @@ function HomeScreen({ state, onAction, setImg, onSelectOrder }: {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setImg(reader.result as string);
+      reader.onloadend = async () => {
+        const compressed = await compressImage(reader.result as string);
+        setImg(compressed);
         onAction('NOTE');
       };
       reader.readAsDataURL(file);
@@ -1396,12 +1432,27 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
       setIsCapturing(true);
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      
+      const maxDim = 800;
+      let width = video.videoWidth;
+      let height = video.videoHeight;
+      
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg');
+        ctx.drawImage(video, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
         
         // Stop stream
         if (stream) {
@@ -1420,11 +1471,12 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
+      reader.onloadend = async () => {
         if (stream) {
           stream.getTracks().forEach(track => track.stop());
         }
-        onNext(reader.result as string);
+        const compressed = await compressImage(reader.result as string);
+        onNext(compressed);
       };
       reader.readAsDataURL(file);
     }
