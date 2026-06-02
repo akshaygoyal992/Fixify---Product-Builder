@@ -40,16 +40,103 @@ import {
   Share2,
   XCircle,
   Info,
-  Maximize2
+  Maximize2,
+  Tv,
+  Hammer,
+  Building,
+  Zap,
+  Leaf,
+  Key,
+  Paintbrush,
+  Droplet
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
-import { GoogleGenAI, Type } from "@google/genai";
+
+interface TaxDetails {
+  hsn: string;
+  rate: number;
+  cgstRate: number;
+  sgstRate: number;
+  description: string;
+}
+
+function getGSTDetailsByService(service: string): TaxDetails {
+  const norm = (service || '').toLowerCase();
+  if (norm.includes('plumb')) {
+    return {
+      hsn: '998711',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Plumbing & Drainage Support Services'
+    };
+  }
+  if (norm.includes('elect')) {
+    return {
+      hsn: '998713',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Electrical Repairs & Installation Services'
+    };
+  }
+  if (norm.includes('carpent')) {
+    return {
+      hsn: '998715',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Carpentry & Joinery Services'
+    };
+  }
+  if (norm.includes('paint')) {
+    return {
+      hsn: '995473',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Painting & Surface Decorating Services'
+    };
+  }
+  if (norm.includes('applian')) {
+    return {
+      hsn: '998716',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Domestic Appliance Repair Services'
+    };
+  }
+  if (norm.includes('mason')) {
+    return {
+      hsn: '9954',
+      rate: 0.18,
+      cgstRate: 0.09,
+      sgstRate: 0.09,
+      description: 'Masonry & Structuring Services'
+    };
+  }
+  return {
+    hsn: '9987',
+    rate: 0.18,
+    cgstRate: 0.09,
+    sgstRate: 0.09,
+    description: 'Maintenance & Repair Services n.e.c.'
+  };
+}
 
 // --- Types ---
 type Screen = 
   | 'SPLASH' | 'LOGIN' | 'OTP' | 'HOME' | 'CATEGORIES' | 'PRO_LIST'
   | 'UPLOAD' | 'NOTE' | 'AI_PREFILL' | 'ADDRESS' 
-  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'ADDRESS_LIST' | 'PAYMENT_METHODS' | 'NOTIFICATIONS' | 'LEGAL' | 'TERMS' | 'PRIVACY' | 'CHAT_HISTORY' | 'PROFILE';
+  | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'ADDRESS_LIST' | 'PAYMENT_METHODS' | 'NOTIFICATIONS' | 'LEGAL' | 'TERMS' | 'PRIVACY' | 'CHAT_HISTORY' | 'PROFILE' | 'EDIT_PROFILE';
+
+interface UserProfile {
+  name: string;
+  email: string;
+  phone: string;
+  avatarUrl: string | null;
+}
 
 const INITIAL_STATE: Omit<AppState, 'screen'> = {
   image: null,
@@ -62,7 +149,7 @@ const INITIAL_STATE: Omit<AppState, 'screen'> = {
     { id: '2', label: 'Office', fullAddress: '456 Tech Way, Suite 200, San Francisco, CA 94105', isDefault: false }
   ],
   notifications: [
-    { id: '1', title: 'Worker on the Way', message: 'Elena has started her journeys to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
+    { id: '1', title: 'Worker on the Way', message: 'Ashish has started his journey to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
     { id: '2', title: 'Job Booked Successfully', message: 'Your booking for Plumbing Repair (FIX-8821) is confirmed for tomorrow.', time: '1 hour ago', type: 'ORDER', isUnread: false },
     { id: '3', title: 'Profile Verified', message: 'Your phone number has been successfully verified.', time: '2 hours ago', type: 'SYSTEM', isUnread: false },
     { id: '4', title: 'Special Offer!', message: 'Get 20% off on your next AC service using code COOLFIX.', time: '5 hours ago', type: 'PROMO', isUnread: false }
@@ -75,6 +162,12 @@ const INITIAL_STATE: Omit<AppState, 'screen'> = {
   address: '123 Main St, Apartment 4B',
   slot: { date: 'May 1, 2026', time: '10:00 AM' },
   history: [],
+  userProfile: {
+    name: 'Akshay Goyal',
+    email: 'akshay@fixify.com',
+    phone: '+91 98765 43210',
+    avatarUrl: null
+  },
 };
 
 interface ChatMessage {
@@ -136,6 +229,7 @@ interface AppState {
   address: string;
   slot: { date: string; time: string };
   history: Order[];
+  userProfile: UserProfile;
 }
 
 // --- Constants ---
@@ -143,10 +237,10 @@ const PRIMARY_COLOR = "#2D336B";
 const BG_COLOR = "#F9F8F6";
 
 const DEFAULT_PRO = {
-  name: "Marcus Thorne",
-  rating: 4.9,
-  avatar: "MT",
-  color: "bg-brand-accent"
+  name: "Ashish Kumar",
+  rating: 4.7,
+  avatar: "AK",
+  color: "bg-emerald-600"
 };
 
 // --- Main App Component ---
@@ -163,7 +257,7 @@ export default function App() {
       { id: '2', label: 'Office', fullAddress: '456 Tech Way, Suite 200, San Francisco, CA 94105', isDefault: false }
     ])),
     notifications: [
-      { id: '1', title: 'Worker on the Way', message: 'Elena has started her journeys to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
+      { id: '1', title: 'Worker on the Way', message: 'Ashish has started his journey to your location.', time: '2 mins ago', type: 'ORDER', isUnread: true },
       { id: '2', title: 'Job Booked Successfully', message: 'Your booking for Plumbing Repair (FIX-8821) is confirmed for tomorrow.', time: '1 hour ago', type: 'ORDER', isUnread: false },
       { id: '3', title: 'Profile Verified', message: 'Your phone number has been successfully verified.', time: '2 hours ago', type: 'SYSTEM', isUnread: false },
       { id: '4', title: 'Special Offer!', message: 'Get 20% off on your next AC service using code COOLFIX.', time: '5 hours ago', type: 'PROMO', isUnread: false }
@@ -174,49 +268,210 @@ export default function App() {
       urgency: 'Medium',
     },
     address: '123 Main St, Apartment 4B',
-    slot: { date: 'May 1, 2026', time: '10:00 AM' },
-    history: JSON.parse(localStorage.getItem('fixify_history') || JSON.stringify([
-      {
-        id: 'FIX-99021',
-        type: 'Water Leakage',
-        service: 'Plumbing',
-        urgency: 'Medium',
-        date: 'May 1',
-        time: '10:00 AM',
-        status: 'Confirmed',
-        amount: '$50 - $75',
-        image: "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop",
-        note: "Significant leak under kitchen sink.",
-        pro: DEFAULT_PRO
-      },
-      {
-        id: 'FIX-8821',
-        type: 'Broken Kitchen Sink',
-        service: 'Plumbing',
-        urgency: 'Medium',
-        date: 'Apr 12, 2026',
-        time: '10:15 AM',
-        status: 'Completed',
-        amount: '$65.00',
-        image: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?q=80&w=1000&auto=format&fit=crop",
-        note: ""
-      },
-      {
-        id: 'FIX-7742',
-        type: 'AC Installation',
-        service: 'Electrical',
-        urgency: 'Medium',
-        date: 'Mar 28, 2026',
-        time: '09:30 AM',
-        status: 'Completed',
-        amount: '$120.00',
-        image: "https://images.unsplash.com/photo-1545244044-8961ad1844b6?q=80&w=1000&auto=format&fit=crop",
-        note: ""
+    slot: (() => {
+      const now = new Date();
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const todayStr = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+      
+      const slotTimeObj = new Date(now.getTime() + 4 * 60 * 60 * 1000); // at least 3 hours in future
+      let hours = slotTimeObj.getHours();
+      let ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      if (hours === 0) hours = 12;
+      let mins = slotTimeObj.getMinutes();
+      let roundedMins = Math.round(mins / 15) * 15;
+      if (roundedMins === 60) {
+        roundedMins = 0;
+        hours = (hours % 12) + 1;
       }
-    ])),
+      const minStr = roundedMins < 10 ? '0' + roundedMins : roundedMins;
+      return { date: todayStr, time: `${hours}:${minStr} ${ampm}` };
+    })(),
+    history: (() => {
+      const raw = localStorage.getItem('fixify_history');
+      let parsed = [];
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw);
+        } catch (e) {
+          parsed = [];
+        }
+      } else {
+        parsed = [
+          {
+            id: 'FIX-99021',
+            type: 'Water Leakage',
+            service: 'Plumbing',
+            urgency: 'Medium',
+            date: 'May 1',
+            time: '10:00 AM',
+            status: 'Confirmed',
+            amount: '₹600 - ₹900',
+            image: "https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&w=800&q=80",
+            note: "Significant leak under kitchen sink.",
+            pro: DEFAULT_PRO
+          },
+          {
+            id: 'FIX-8821',
+            type: 'Broken Kitchen Sink',
+            service: 'Plumbing',
+            urgency: 'Medium',
+            date: 'May 21, 2026',
+            time: '10:15 AM',
+            status: 'Completed',
+            amount: '₹850.00',
+            image: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80",
+            note: ""
+          },
+          {
+            id: 'FIX-7742',
+            type: 'AC Installation',
+            service: 'Electrical',
+            urgency: 'Medium',
+            date: 'May 13, 2026',
+            time: '09:30 AM',
+            status: 'Completed',
+            amount: '₹950.00',
+            image: "https://images.unsplash.com/photo-1527018601619-a508a2be00cd?auto=format&fit=crop&w=800&q=80",
+            note: ""
+          }
+        ];
+      }
+      
+      const now = new Date();
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const todayStrShort = `${months[now.getMonth()]} ${now.getDate()}`;
+      
+      const slotTimeObj = new Date(now.getTime() + 4 * 60 * 60 * 1000); // at least 3 hours in future
+      let hours = slotTimeObj.getHours();
+      let ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      if (hours === 0) hours = 12;
+      let mins = slotTimeObj.getMinutes();
+      let roundedMins = Math.round(mins / 15) * 15;
+      if (roundedMins === 60) {
+        roundedMins = 0;
+        hours = (hours % 12) + 1;
+      }
+      const minStr = roundedMins < 10 ? '0' + roundedMins : roundedMins;
+      const futureTimeStr = `${hours}:${minStr} ${ampm}`;
+
+      // Migrate and ensure dynamic dates (not older than 1 month) and pricing <= ₹1000
+      return parsed.map((item: any) => {
+        const itemNow = new Date();
+        const dateOptions: Intl.DateTimeFormatOptions = {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        };
+        if (item.id === 'FIX-99021') {
+          return { ...item, date: todayStrShort, time: futureTimeStr, amount: '₹600 - ₹900' };
+        }
+        if (item.id === 'FIX-8821') {
+          const jDate = new Date(itemNow.getTime() - 11 * 24 * 60 * 60 * 1000); // 11 days ago
+          return { ...item, date: `${months[jDate.getMonth()]} ${jDate.getDate()}, ${jDate.getFullYear()}`, amount: '₹850.00' };
+        }
+        if (item.id === 'FIX-7742') {
+          const jDate = new Date(itemNow.getTime() - 21 * 24 * 60 * 60 * 1000); // 21 days ago
+          return { ...item, date: `${months[jDate.getMonth()]} ${jDate.getDate()}, ${jDate.getFullYear()}`, amount: '₹950.00' };
+        }
+        if (typeof item.amount === 'string' && item.amount.includes('$')) {
+          let amt = item.amount;
+          amt = amt.replace('$50 - $75', '₹600 - ₹900');
+          amt = amt.replace('$45 - $80', '₹550 - ₹850');
+          amt = amt.replace('$65.00', '₹850.00');
+          amt = amt.replace('$120.00', '₹950.00');
+          amt = amt.replace(/\$([0-9.,]+)/g, (match: string, p1: string) => {
+            const num = parseFloat(p1.replace(/,/g, ''));
+            const finalNum = num * 83 > 1000 ? 950 : Math.round(num * 83);
+            return '₹' + finalNum.toLocaleString('en-IN');
+          });
+          return { ...item, amount: amt };
+        }
+        // General safe-guard for other completed orders to keep dates within last 30 days and amounts <= ₹1000
+        if (item.status === 'Completed') {
+          let currentAmt = item.amount;
+          if (typeof currentAmt === 'string') {
+            const matchInt = currentAmt.match(/₹\s*([0-9,.]+)/);
+            if (matchInt) {
+              const val = parseFloat(matchInt[1].replace(/,/g, ''));
+              if (val > 1000) {
+                currentAmt = '₹950.00';
+              }
+            } else if (currentAmt.includes('-')) {
+              currentAmt = '₹600 - ₹900';
+            }
+          }
+          let itemDate = new Date(item.date);
+          if (isNaN(itemDate.getTime()) || (itemNow.getTime() - itemDate.getTime() > 30 * 24 * 60 * 60 * 1000)) {
+            const backupDate = new Date(itemNow.getTime() - 14 * 24 * 60 * 60 * 1000);
+            return {
+              ...item,
+              date: `${months[backupDate.getMonth()]} ${backupDate.getDate()}, ${backupDate.getFullYear()}`,
+              amount: currentAmt
+            };
+          }
+          return { ...item, amount: currentAmt };
+        }
+        return item;
+      });
+    })(),
+    userProfile: JSON.parse(localStorage.getItem('fixify_profile') || JSON.stringify({
+      name: 'Akshay Goyal',
+      email: 'akshay@fixify.com',
+      phone: '+91 98765 43210',
+      avatarUrl: null
+    })),
   });
 
   const [booting, setBooting] = useState(true);
+  const [indiaTime, setIndiaTime] = useState<string>('');
+
+  useEffect(() => {
+    const updateTime = () => {
+      try {
+        const now = new Date();
+        const options: Intl.DateTimeFormatOptions = {
+          timeZone: "Asia/Kolkata",
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: true
+        };
+        const formatter = new Intl.DateTimeFormat("en-US", options);
+        const parts = formatter.formatToParts(now);
+        
+        let weekday = "";
+        let month = "";
+        let day = "";
+        let hour = "";
+        let minute = "";
+        let second = "";
+        let dayPeriod = "";
+        
+        parts.forEach(part => {
+          if (part.type === "weekday") weekday = part.value;
+          if (part.type === "month") month = part.value;
+          if (part.type === "day") day = part.value;
+          if (part.type === "hour") hour = part.value;
+          if (part.type === "minute") minute = part.value;
+          if (part.type === "second") second = part.value;
+          if (part.type === "dayPeriod") dayPeriod = part.value;
+        });
+        
+        setIndiaTime(`${weekday}, ${month} ${day} • ${hour}:${minute}:${second} ${dayPeriod}`);
+      } catch (e) {
+        setIndiaTime(new Date().toLocaleString());
+      }
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (state.screen === 'SPLASH') {
@@ -243,6 +498,9 @@ export default function App() {
       if (updates.history) {
         localStorage.setItem('fixify_history', JSON.stringify(newState.history));
       }
+      if (updates.userProfile) {
+        localStorage.setItem('fixify_profile', JSON.stringify(newState.userProfile));
+      }
       return newState;
     });
   };
@@ -268,7 +526,7 @@ export default function App() {
           date: state.slot.date,
           time: state.slot.time,
           status: 'Confirmed',
-          amount: '$45 - $80',
+          amount: '₹600 - ₹900',
           image: state.image,
           note: state.note,
           pro: DEFAULT_PRO
@@ -288,7 +546,7 @@ export default function App() {
           date: state.slot.date,
           time: state.slot.time,
           status: 'Confirmed',
-          amount: '$45 - $80',
+          amount: '₹600 - ₹900',
           image: state.image,
           note: state.note,
           pro: DEFAULT_PRO
@@ -316,7 +574,7 @@ export default function App() {
           }}
         />
       );
-      case 'SUPPORT_CHAT': return <SupportChatScreen history={state.chatMessages} onUpdate={(msgs) => updateState({ chatMessages: msgs })} onBack={() => navigate('PROFILE')} />;
+      case 'SUPPORT_CHAT': return <SupportChatScreen userName={state.userProfile.name} history={state.chatMessages} onUpdate={(msgs) => updateState({ chatMessages: msgs })} onBack={() => navigate('PROFILE')} />;
       case 'ADDRESS_LIST': return <AddressListScreen addresses={state.addresses} onUpdate={(addrs) => updateState({ addresses: addrs })} onBack={() => navigate('PROFILE')} />;
       case 'PAYMENT_METHODS': return <PaymentMethodsScreen onBack={() => navigate('PROFILE')} />;
       case 'NOTIFICATIONS': return <NotificationsScreen notifications={state.notifications} onBack={() => navigate('PROFILE')} onMarkRead={(id) => updateState({ notifications: state.notifications.map(n => n.id === id ? { ...n, isUnread: false } : n) })} />;
@@ -324,10 +582,33 @@ export default function App() {
       case 'TERMS': return <DocumentScreen title="Terms & Conditions" onBack={() => navigate('LEGAL')} content={TERMS_CONTENT} />;
       case 'PRIVACY': return <DocumentScreen title="Privacy Policy" onBack={() => navigate('LEGAL')} content={PRIVACY_POLICY_CONTENT} />;
       case 'CHAT_HISTORY': return <ChatHistoryScreen onBack={() => navigate('PROFILE')} onSelectChat={() => navigate('SUPPORT_CHAT')} />;
-      case 'PROFILE': return <ProfileScreen onBack={() => navigate('HOME')} onSupport={() => navigate('SUPPORT_CHAT')} onAddresses={() => navigate('ADDRESS_LIST')} onPayments={() => navigate('PAYMENT_METHODS')} onNotifications={() => navigate('NOTIFICATIONS')} onLegal={() => navigate('LEGAL')} onChatHistory={() => navigate('CHAT_HISTORY')} onLogout={() => {
-        localStorage.removeItem('fixify_chat');
-        updateState({ ...INITIAL_STATE, screen: 'LOGIN' });
-      }} />;
+      case 'PROFILE': return (
+        <ProfileScreen 
+          userProfile={state.userProfile}
+          onEditProfile={() => navigate('EDIT_PROFILE')}
+          onBack={() => navigate('HOME')} 
+          onSupport={() => navigate('SUPPORT_CHAT')} 
+          onAddresses={() => navigate('ADDRESS_LIST')} 
+          onPayments={() => navigate('PAYMENT_METHODS')} 
+          onNotifications={() => navigate('NOTIFICATIONS')} 
+          onLegal={() => navigate('LEGAL')} 
+          onChatHistory={() => navigate('CHAT_HISTORY')} 
+          onLogout={() => {
+            localStorage.removeItem('fixify_chat');
+            updateState({ ...INITIAL_STATE, screen: 'LOGIN' });
+          }} 
+        />
+      );
+      case 'EDIT_PROFILE': return (
+        <EditProfileScreen 
+          userProfile={state.userProfile} 
+          onSave={(profile) => {
+            updateState({ userProfile: profile });
+            navigate('PROFILE');
+          }} 
+          onBack={() => navigate('PROFILE')} 
+        />
+      );
       default: return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
     }
   };
@@ -338,7 +619,7 @@ export default function App() {
         <div className="iphone-content relative">
           {/* Status Bar */}
           <div className="h-11 px-8 pt-4 flex justify-between items-center z-50 bg-transparent">
-            <span className="text-sm font-semibold">9:41</span>
+            <span className="text-xs md:text-sm font-semibold">{indiaTime || "9:41"}</span>
             <div className="flex gap-1.5 items-center">
               <div className="w-4 h-4 bg-black rounded-full" />
               <div className="w-4 h-4 bg-black rounded-full" />
@@ -381,6 +662,85 @@ export default function App() {
 
 // --- Component Fragments ---
 
+function FixifyLogo({ className = "h-8", showText = true, iconOnly = false, lightMode = false }: { className?: string, showText?: boolean, iconOnly?: boolean, lightMode?: boolean }) {
+  const textColor = lightMode ? 'text-white' : 'text-brand-accent';
+  const iconColor = lightMode ? 'text-white' : 'text-neutral-900';
+
+  return (
+    <div className={`flex items-center gap-2.5 select-none ${className}`}>
+      {/* Icon representing the original logo designed */}
+      <svg 
+        viewBox="0 0 100 100" 
+        className="w-10 h-10 flex-shrink-0"
+        fill="none" 
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <g className={iconColor}>
+          {/* TROWEL (SHOVEL) pointing up-left */}
+          {/* Shovel blade: Rounded pointed shield shape */}
+          <path 
+            d="M 18 18 C 30 14, 44 26, 44 40 C 44 44, 40 44, 38 43 C 26 43, 14 30, 18 18 Z" 
+            fill="currentColor"
+          />
+          {/* Shovel handle shank */}
+          <line 
+            x1="38" 
+            y1="38" 
+            x2="48" 
+            y2="48" 
+            stroke="currentColor" 
+            strokeWidth="3.5" 
+            strokeLinecap="round" 
+          />
+          {/* Shovel handle grip */}
+          <line 
+            x1="46" 
+            y1="46" 
+            x2="68" 
+            y2="68" 
+            stroke="currentColor" 
+            strokeWidth="6.5" 
+            strokeLinecap="round" 
+          />
+
+          {/* HAMMER pointing up-right, crossed over / under the trowel */}
+          {/* Hammer handle */}
+          <line 
+            x1="34" 
+            y1="68" 
+            x2="56" 
+            y2="46" 
+            stroke="currentColor" 
+            strokeWidth="6.5" 
+            strokeLinecap="round" 
+          />
+          <line 
+            x1="54" 
+            y1="48" 
+            x2="63" 
+            y2="39" 
+            stroke="currentColor" 
+            strokeWidth="3.5" 
+            strokeLinecap="round" 
+          />
+          {/* Hammer head */}
+          {/* Face on top-right, claw curving left-down */}
+          <path 
+            d="M 52 35 C 50 25, 54 18, 62 16 C 65 15, 68 18, 70 20 L 78 14 C 81 12, 84 15, 82 18 L 76 24 C 74 26, 76 29, 78 30 L 82 34 C 84 37, 81 40, 78 38 L 68 28 C 66 32, 60 36, 52 35 Z" 
+            fill="currentColor"
+          />
+        </g>
+      </svg>
+
+      {showText && !iconOnly && (
+        <span className={`text-2xl font-black tracking-tight ${textColor} lowercase font-sans`}>
+          fixify
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SplashScreen() {
   return (
     <div className="h-full flex items-center justify-center bg-white">
@@ -390,10 +750,12 @@ function SplashScreen() {
         transition={{ duration: 0.6, ease: "easeOut" }}
         className="flex flex-col items-center"
       >
-        <div className="w-20 h-20 bg-brand-accent rounded-[28px] flex items-center justify-center mb-6 shadow-2xl">
-          <Plus className="text-white w-10 h-10" />
+        <div className="w-24 h-24 bg-brand-accent rounded-[28px] flex items-center justify-center mb-6 shadow-2xl">
+          <FixifyLogo iconOnly className="text-white w-14 h-14" lightMode />
         </div>
-        <h1 className="text-3xl font-bold tracking-tighter text-brand-accent">Fixify</h1>
+        <div className="flex items-center justify-center">
+          <span className="text-3xl font-black tracking-tight text-brand-accent lowercase font-sans">fixify</span>
+        </div>
       </motion.div>
     </div>
   );
@@ -501,17 +863,12 @@ function HomeScreen({ state, onAction, setImg, onSelectOrder }: {
         accept="image/*" 
         onChange={handleFileChange} 
       />
-      <header className="flex justify-between items-center">
-        <div>
-          <span className="text-xl font-bold tracking-tight text-brand-accent">Fixify</span>
-        </div>
-        <div className="w-10 h-10 rounded-full bg-brand-surface flex items-center justify-center text-brand-accent shadow-sm">
-          <div className="w-2 h-2 rounded-full bg-red-500" />
-        </div>
+      <header className="flex justify-center items-center">
+        <FixifyLogo className="h-7" showText={true} />
       </header>
 
       <div>
-        <h1 className="text-[32px] font-semibold leading-tight text-brand-accent tracking-tight">What needs<br/>fixing?</h1>
+        <h1 className="text-[32px] font-semibold leading-tight text-brand-accent tracking-tight">What needs fixing?</h1>
       </div>
 
       {/* Primary Actions */}
@@ -611,6 +968,21 @@ function HomeScreen({ state, onAction, setImg, onSelectOrder }: {
 
 function CategoriesScreen({ onBack, onSelect }: { onBack: () => void, onSelect: (cat: string) => void }) {
   const cats = ["Appliance", "Carpentry", "Civil work", "Electrical", "Gardening", "Locksmith", "Painting", "Plumbing"];
+  
+  const getCategoryIcon = (cat: string) => {
+    switch (cat) {
+      case "Appliance": return <Tv size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Carpentry": return <Hammer size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Civil work": return <Building size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Electrical": return <Zap size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Gardening": return <Leaf size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Locksmith": return <Key size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Painting": return <Paintbrush size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      case "Plumbing": return <Droplet size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+      default: return <Grid size={18} className="text-brand-muted group-hover:text-brand-accent transition-colors" />;
+    }
+  };
+
   return (
     <div className="h-full px-6 pt-12">
       <div className="flex items-center gap-4 mb-8">
@@ -622,12 +994,12 @@ function CategoriesScreen({ onBack, onSelect }: { onBack: () => void, onSelect: 
           <div 
             key={c} 
             onClick={() => onSelect(c)}
-            className="card h-32 flex flex-col justify-end gap-2 hover:border-brand-accent transition-all cursor-pointer group"
+            className="card h-32 flex flex-col items-center justify-center text-center gap-2.5 hover:border-brand-accent transition-all cursor-pointer group"
           >
-            <div className="w-8 h-8 rounded-lg bg-brand-bg flex items-center justify-center group-hover:bg-brand-accent/10">
-              <Grid size={16} className="text-brand-muted group-hover:text-brand-accent" />
+            <div className="w-10 h-10 rounded-xl bg-brand-surface border border-brand-accent/5 flex items-center justify-center group-hover:bg-brand-accent/10 transition-colors">
+              {getCategoryIcon(c)}
             </div>
-            <p className="font-bold text-sm">{c}</p>
+            <p className="font-bold text-sm text-brand-accent/95">{c}</p>
           </div>
         ))}
       </div>
@@ -635,44 +1007,303 @@ function CategoriesScreen({ onBack, onSelect }: { onBack: () => void, onSelect: 
   );
 }
 
+const CATEGORY_PROS: Record<string, Array<{
+  id: string;
+  name: string;
+  rating: number;
+  reviews: number;
+  xp: string;
+  price: string;
+  avatar: string;
+  color: string;
+  topReview: string;
+}>> = {
+  "Appliance": [
+    {
+      id: "app-1",
+      name: "Sachin Thakur",
+      rating: 4.8,
+      reviews: 94,
+      xp: "6 years",
+      price: "₹450/hr",
+      avatar: "ST",
+      color: "bg-blue-600",
+      topReview: "Sachin diagnosed the AC compressor issue quickly and charged exactly as estimated. Clean work!"
+    },
+    {
+      id: "app-2",
+      name: "Ashish Kumar",
+      rating: 4.7,
+      reviews: 82,
+      xp: "5 years",
+      price: "₹380/hr",
+      avatar: "AK",
+      color: "bg-emerald-600",
+      topReview: "Very professional washing machine service. Ashish was punctual and extremely humble."
+    },
+    {
+      id: "app-3",
+      name: "Rajat Sharma",
+      rating: 4.9,
+      reviews: 110,
+      xp: "8 years",
+      price: "₹520/hr",
+      avatar: "RS",
+      color: "bg-indigo-600",
+      topReview: "Rajat fixed the microwave turntable in no time. Great communication!"
+    }
+  ],
+  "Carpentry": [
+    {
+      id: "carp-1",
+      name: "Manoj Panchal",
+      rating: 4.9,
+      reviews: 145,
+      xp: "10 years",
+      price: "₹650/hr",
+      avatar: "MP",
+      color: "bg-amber-600",
+      topReview: "Manoj repaired our alignment of teak wooden cabinets perfectly. Highly skilled master!"
+    },
+    {
+      id: "carp-2",
+      name: "Vikram Suthar",
+      rating: 4.6,
+      reviews: 58,
+      xp: "4 years",
+      price: "₹420/hr",
+      avatar: "VS",
+      color: "bg-rose-600",
+      topReview: "Vikram was prompt to mend the squeaky door hinge. Good pricing."
+    },
+    {
+      id: "carp-3",
+      name: "Devendra Jangid",
+      rating: 4.8,
+      reviews: 190,
+      xp: "12 years",
+      price: "₹700/hr",
+      avatar: "DJ",
+      color: "bg-teal-600",
+      topReview: "Excellent craftsmanship on the custom shelf installation. Devendra is very professional."
+    }
+  ],
+  "Civil work": [
+    {
+      id: "civ-1",
+      name: "Ramesh Verma",
+      rating: 4.7,
+      reviews: 102,
+      xp: "9 years",
+      price: "₹800/hr",
+      avatar: "RV",
+      color: "bg-stone-600",
+      topReview: "Ramesh fixed our wall plaster crack with immaculate precision. Clean work on disposal."
+    },
+    {
+      id: "civ-2",
+      name: "Harish Solanki",
+      rating: 4.8,
+      reviews: 130,
+      xp: "11 years",
+      price: "₹950/hr",
+      avatar: "HS",
+      color: "bg-orange-600",
+      topReview: "Harish redid our loose balcony tiles beautifully. Very experienced and neat."
+    },
+    {
+      id: "civ-3",
+      name: "Sandeep Yadav",
+      rating: 4.5,
+      reviews: 74,
+      xp: "6 years",
+      price: "₹600/hr",
+      avatar: "SY",
+      color: "bg-indigo-700",
+      topReview: "Punctual sand filler and cement grouter. Highly efficient."
+    }
+  ],
+  "Electrical": [
+    {
+      id: "elec-1",
+      name: "Amit Mishra",
+      rating: 4.9,
+      reviews: 135,
+      xp: "7 years",
+      price: "₹480/hr",
+      avatar: "AM",
+      color: "bg-yellow-600",
+      topReview: "Amit solved a recurring short-circuit issue in our line instantly. Fully certified and safe."
+    },
+    {
+      id: "elec-2",
+      name: "Vikas Pandey",
+      rating: 4.8,
+      reviews: 142,
+      xp: "9 years",
+      price: "₹550/hr",
+      avatar: "VP",
+      color: "bg-violet-600",
+      topReview: "Excellent work on the new smart switchboard installation. Vikas was very safe."
+    },
+    {
+      id: "elec-3",
+      name: "Rohit Sen",
+      rating: 4.6,
+      reviews: 69,
+      xp: "5 years",
+      price: "₹350/hr",
+      avatar: "RS",
+      color: "bg-cyan-600",
+      topReview: "Rohit was friendly and replaced the ceiling hook & fan in 15 minutes flat."
+    }
+  ],
+  "Gardening": [
+    {
+      id: "gard-1",
+      name: "Rajesh Mali",
+      rating: 4.9,
+      reviews: 220,
+      xp: "14 years",
+      price: "₹600/hr",
+      avatar: "RM",
+      color: "bg-green-600",
+      topReview: "Rajesh reshaped our overgrown nursery into a peaceful green haven. Excellent plant selection knowledge."
+    },
+    {
+      id: "gard-2",
+      name: "Sunil Saini",
+      rating: 4.7,
+      reviews: 96,
+      xp: "8 years",
+      price: "₹400/hr",
+      avatar: "SS",
+      color: "bg-emerald-700",
+      topReview: "Sunil set up our drip irrigation and pruned the roses. Extremely tidy and helpful."
+    },
+    {
+      id: "gard-3",
+      name: "Vijay Maurya",
+      rating: 4.8,
+      reviews: 78,
+      xp: "6 years",
+      price: "₹380/hr",
+      avatar: "VM",
+      color: "bg-lime-600",
+      topReview: "Vijay is very passionate about soil health. He added high-quality compost and cleared weeds."
+    }
+  ],
+  "Locksmith": [
+    {
+      id: "lock-1",
+      name: "Pawan Chaurasia",
+      rating: 4.8,
+      reviews: 88,
+      xp: "7 years",
+      price: "₹500/hr",
+      avatar: "PC",
+      color: "bg-sky-600",
+      topReview: "Pawan unlocked our jammed digital door handle within minutes. Excellent locksmith skills."
+    },
+    {
+      id: "lock-2",
+      name: "Ajay Jha",
+      rating: 4.9,
+      reviews: 154,
+      xp: "10 years",
+      price: "₹720/hr",
+      avatar: "AJ",
+      color: "bg-zinc-600",
+      topReview: "Replaced old cylinders with high-security locks. Ajay was fast and very informative."
+    },
+    {
+      id: "lock-3",
+      name: "Jagdish Prasad",
+      rating: 4.6,
+      reviews: 112,
+      xp: "12 years",
+      price: "₹580/hr",
+      avatar: "JP",
+      color: "bg-slate-600",
+      topReview: "Jagdish made perfect duplicate heavy-duty keys for our iron main gate."
+    }
+  ],
+  "Painting": [
+    {
+      id: "paint-1",
+      name: "Deepak Chawla",
+      rating: 4.8,
+      reviews: 115,
+      xp: "8 years",
+      price: "₹750/hr",
+      avatar: "DC",
+      color: "bg-pink-600",
+      topReview: "Very clean painter! Deepak masked everything so there wasn't a single drop of paint on floors."
+    },
+    {
+      id: "paint-2",
+      name: "Sanjay Gupta",
+      rating: 4.7,
+      reviews: 140,
+      xp: "11 years",
+      price: "₹850/hr",
+      avatar: "SG",
+      color: "bg-red-600",
+      topReview: "Sanjay suggested the perfect matte wall texture for our living room backdrop. Absolute artist!"
+    },
+    {
+      id: "paint-3",
+      name: "Anil Khatri",
+      rating: 4.9,
+      reviews: 92,
+      xp: "6 years",
+      price: "₹600/hr",
+      avatar: "AK",
+      color: "bg-fuchsia-600",
+      topReview: "Highly dynamic damp treatment followed by pristine premium paint coating."
+    }
+  ],
+  "Plumbing": [
+    {
+      id: "plumb-1",
+      name: "Suresh Kumar",
+      rating: 4.9,
+      reviews: 188,
+      xp: "11 years",
+      price: "₹490/hr",
+      avatar: "SK",
+      color: "bg-blue-600",
+      topReview: "Suresh fixed the clogged shower fitting and pressure pump perfectly. Very neat work."
+    },
+    {
+      id: "plumb-2",
+      name: "Jitendra Paswan",
+      rating: 4.8,
+      reviews: 121,
+      xp: "9 years",
+      price: "₹450/hr",
+      avatar: "JP",
+      color: "bg-cyan-700",
+      topReview: "Highly responsive plumber. Jitendra repaired the kitchen pipe joint with high durability."
+    },
+    {
+      id: "plumb-3",
+      name: "Vinod Saxena",
+      rating: 4.7,
+      reviews: 94,
+      xp: "7 years",
+      price: "₹390/hr",
+      avatar: "VS",
+      color: "bg-emerald-600",
+      topReview: "Vinod resolves running flush tanks under budget and quickly. Very satisfied with his honesty."
+    }
+  ]
+};
+
 function ProListScreen({ category, onBack }: { category: string, onBack: () => void }) {
   const [selectedPro, setSelectedPro] = useState<string | null>(null);
 
-  const pros = [
-    {
-      id: "1",
-      name: "Marcus Thorne",
-      rating: 4.9,
-      reviews: 124,
-      xp: "12 years",
-      price: "$45/hr",
-      avatar: "MT",
-      color: "bg-blue-600",
-      topReview: "Marcus was incredibly professional. Fixed my leaking sink in 20 minutes. Highly recommended and very polite!"
-    },
-    {
-      id: "2",
-      name: "Elena Rodriguez",
-      rating: 4.8,
-      reviews: 89,
-      xp: "8 years",
-      price: "$50/hr",
-      avatar: "ER",
-      color: "bg-purple-600",
-      topReview: "Super efficient and clean work. Elena explained exactly what was wrong before starting the job. A+ service."
-    },
-    {
-      id: "3",
-      name: "David Chen",
-      rating: 4.7,
-      reviews: 215,
-      xp: "15 years",
-      price: "$40/hr",
-      avatar: "DC",
-      color: "bg-emerald-600",
-      topReview: "Great experience. David arrived right on time and had all the parts needed for a tricky repair. Very knowledgeable."
-    }
-  ];
+  const pros = CATEGORY_PROS[category] || CATEGORY_PROS["Plumbing"];
 
   return (
     <div className="h-full flex flex-col pt-12">
@@ -867,6 +1498,155 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
 
 function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => void, onNext: (note: string) => void }) {
   const [note, setNote] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = React.useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const rec = new SpeechRecognition();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = 'en-US';
+
+      rec.onstart = () => {
+        setIsListening(true);
+      };
+
+      rec.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript) {
+          setNote(prev => prev + (prev.endsWith(' ') || prev === '' ? '' : ' ') + finalTranscript);
+        }
+      };
+
+      rec.onerror = (event: any) => {
+        console.error('Speech recognition error', event);
+        setIsListening(false);
+      };
+
+      rec.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = rec;
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const toggleListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (!SpeechRecognition) {
+      if (isListening) {
+        if ((window as any)._stopSpeechSim) {
+          (window as any)._stopSpeechSim();
+        }
+        setIsListening(false);
+        return;
+      }
+      setIsListening(true);
+      
+      const phrases = [
+        "The water is leaking from the main pipe under the sink. ",
+        "It started about an hour ago, and the floor is getting slightly wet. ",
+        "We tried shutting off the valve, but it is stuck. Please send someone who can help with old plumbing."
+      ];
+      
+      let currentPhraseIdx = 0;
+      let currentWordIdx = 0;
+      
+      const interval = setInterval(() => {
+        if (currentPhraseIdx >= phrases.length) {
+          clearInterval(interval);
+          setIsListening(false);
+          return;
+        }
+
+        const words = phrases[currentPhraseIdx].split(" ");
+        if (currentWordIdx < words.length) {
+          setNote(prev => prev + (prev.endsWith(" ") || prev === "" ? "" : " ") + words[currentWordIdx]);
+          currentWordIdx++;
+        } else {
+          currentPhraseIdx++;
+          currentWordIdx = 0;
+        }
+      }, 350);
+
+      const stopSim = () => {
+        clearInterval(interval);
+        setIsListening(false);
+      };
+
+      (window as any)._stopSpeechSim = stopSim;
+      return;
+    }
+
+    if (isListening) {
+      if ((window as any)._stopSpeechSim) {
+        (window as any)._stopSpeechSim();
+      }
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+    } else {
+      setIsListening(true);
+      try {
+        recognitionRef.current.start();
+      } catch (err) {
+        console.warn("Real speech recognition start failed, using pre-recorded mock typing simulation fallback:", err);
+        const phrases = [
+          "The water leak is spreading behind the kitchen cabinet. ",
+          "It started leaking rapidly and it's quite cold. ",
+          "I think we need a plumber as soon as possible to check the pipes."
+        ];
+        
+        let currentPhraseIdx = 0;
+        let currentWordIdx = 0;
+        
+        const interval = setInterval(() => {
+          const words = phrases[currentPhraseIdx]?.split(" ");
+          if (!words) {
+            clearInterval(interval);
+            setIsListening(false);
+            return;
+          }
+          if (currentWordIdx < words.length) {
+            setNote(prev => prev + (prev.endsWith(" ") || prev === "" ? "" : " ") + words[currentWordIdx]);
+            currentWordIdx++;
+          } else {
+            currentPhraseIdx++;
+            currentWordIdx = 0;
+          }
+        }, 300);
+
+        const stopSim = () => {
+          clearInterval(interval);
+          setIsListening(false);
+        };
+
+        (window as any)._stopSpeechSim = stopSim;
+      }
+    }
+  };
+
   return (
     <div className="h-full px-6 flex flex-col pt-12 pb-8">
       <div className="flex items-center justify-between mb-8">
@@ -877,7 +1657,7 @@ function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => 
 
       {state.image && (
         <div className="w-full aspect-[4/3] rounded-3xl overflow-hidden mb-6 shadow-inner relative group">
-          <img src={state.image} className="w-full h-full object-cover" alt="Issue"/>
+          <img src={state.image} className="w-full h-full object-cover" alt="Issue" referrerPolicy="no-referrer" />
           <div className="absolute inset-0 bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
             <span className="text-white text-sm font-medium">Retake</span>
           </div>
@@ -892,9 +1672,18 @@ function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => 
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
-        <div className="flex items-center gap-2 mt-2 text-brand-muted">
-           <Mic size={16} />
-           <span className="text-xs">Tap to dictate note</span>
+        <div 
+          onClick={toggleListening}
+          className={`flex items-center gap-2 mt-3 px-3 py-2 rounded-xl border transition-all duration-300 w-fit cursor-pointer select-none active:scale-95 ${
+            isListening 
+              ? "bg-red-50/70 border-red-200 text-red-600 font-medium animate-pulse shadow-sm" 
+              : "bg-brand-surface border-brand-secondary/30 text-brand-muted hover:text-brand-accent hover:border-brand-accent/20 hover:shadow-sm"
+          }`}
+        >
+           <Mic size={16} className={isListening ? "animate-bounce" : ""} />
+           <span className="text-xs">
+             {isListening ? "Listening... Tap to stop" : "Tap to dictate note"}
+           </span>
         </div>
       </div>
 
@@ -913,60 +1702,25 @@ function AIPrefillScreen({ state, onBack, onNext }: { state: AppState, onBack: (
   useEffect(() => {
     const analyzeIssue = async () => {
       try {
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-          throw new Error('AI service is currently unavailable.');
-        }
-
-        const ai = new GoogleGenAI({ apiKey });
-        
-        const contents: any[] = [];
-        
-        if (state.image) {
-          const base64Data = state.image.split(',')[1];
-          const mimeType = state.image.split(';')[0].split(':')[1];
-          contents.push({
-            inlineData: {
-              mimeType,
-              data: base64Data
-            }
-          });
-        }
-        
-        contents.push({
-          text: `Analyze this home repair issue based on the provided image and user note. 
-          User Note: "${state.note || 'No note provided'}"
-          
-          Return a JSON object with the following fields:
-          - type: A specific name for the problem (e.g., "Leaky Kitchen Faucet", "Clogged Drain")
-          - service: The general category of professional needed (e.g., "Plumbing", "Electrical", "Carpentry")
-          - urgency: One of "Low", "Medium", "High"
-          
-          Be as accurate and specific as possible.`
+        const response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            image: state.image,
+            note: state.note
+          })
         });
 
-        const response = await ai.models.generateContent({
-          model: "gemini-3-flash-preview",
-          contents: { parts: contents },
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                type: { type: Type.STRING },
-                service: { type: Type.STRING },
-                urgency: { type: Type.STRING, enum: ["Low", "Medium", "High"] }
-              },
-              required: ["type", "service", "urgency"]
-            }
-          }
-        });
-
-        if (response.text) {
-          const result = JSON.parse(response.text);
-          setData(result);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Server responded with ${response.status}`);
         }
-      } catch (err) {
+
+        const result = await response.json();
+        setData(result);
+      } catch (err: any) {
         console.error("AI Analysis Error:", err);
         setError("AI detection failed. You can manually adjust the details.");
       } finally {
@@ -1103,7 +1857,7 @@ function AddressScreen({ state, onBack, onNext }: { state: AppState, onBack: () 
              <div className="absolute inset-0 flex items-center justify-center">
                 <MapPin className="text-brand-accent animate-bounce" size={32} />
              </div>
-             <img src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=700&auto=format&fit=crop" className="w-full h-full object-cover opacity-50" alt="Map"/>
+             <img src="https://picsum.photos/seed/map/800/600" className="w-full h-full object-cover opacity-50" alt="Map" referrerPolicy="no-referrer" />
           </div>
           <div className="p-4">
              <p className="text-xs font-semibold text-brand-muted uppercase mb-2">Saved Address</p>
@@ -1137,10 +1891,30 @@ function AddressScreen({ state, onBack, onNext }: { state: AppState, onBack: () 
 }
 
 function SlotSelectionScreen({ onBack, onNext }: { onBack: () => void, onNext: (s: any) => void }) {
-  const dates = ["Apr 30", "May 1", "May 2", "May 3"];
+  const getDynamicDates = () => {
+    const list = [];
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    for (let i = 0; i < 4; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      list.push(`${months[d.getMonth()]} ${d.getDate()}`);
+    }
+    return list;
+  };
+  const dates = getDynamicDates();
   const times = ["9:00 AM", "11:00 AM", "1:00 PM", "3:00 PM", "5:00 PM"];
-  const [selDate, setSelDate] = useState(dates[1]);
-  const [selTime, setSelTime] = useState(times[1]);
+  const [selDate, setSelDate] = useState(dates[0]);
+  
+  const getInitialTime = () => {
+    const now = new Date();
+    const currentHour = now.getHours();
+    const targetHour = currentHour + 3;
+    if (targetHour < 11) return "11:00 AM";
+    if (targetHour < 13) return "1:00 PM";
+    if (targetHour < 15) return "3:00 PM";
+    return "5:00 PM";
+  };
+  const [selTime, setSelTime] = useState(getInitialTime());
 
   return (
     <div className="h-full px-6 flex flex-col pt-12 pb-8">
@@ -1191,6 +1965,9 @@ function SlotSelectionScreen({ onBack, onNext }: { onBack: () => void, onNext: (
 }
 
 function SummaryScreen({ state, onBack, onNext }: { state: AppState, onBack: () => void, onNext: () => void }) {
+  const [showSummaryBreakdown, setShowSummaryBreakdown] = useState(false);
+  const taxDetails = getGSTDetailsByService(state.issueData.service);
+
   return (
     <div className="h-full px-6 flex flex-col pt-12 pb-8">
       <div className="flex items-center justify-between mb-8">
@@ -1203,7 +1980,7 @@ function SummaryScreen({ state, onBack, onNext }: { state: AppState, onBack: () 
         <div className="card space-y-4">
           <div className="flex gap-4">
              <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0">
-               <img src={state.image || "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=687&auto=format&fit=crop"} className="w-full h-full object-cover" alt="issue"/>
+               <img src={state.image || "https://picsum.photos/seed/default/800/600"} className="w-full h-full object-cover" alt="issue" referrerPolicy="no-referrer" />
              </div>
              <div>
                <p className="font-bold">{state.issueData.type}</p>
@@ -1232,13 +2009,50 @@ function SummaryScreen({ state, onBack, onNext }: { state: AppState, onBack: () 
           </div>
         </div>
 
-        <div className="card bg-brand-bg border-none">
+        <div className="card bg-brand-bg border-none relative overflow-hidden">
            <div className="flex justify-between items-center mb-1">
              <span className="text-xs font-semibold text-brand-muted uppercase">Estimated Cost</span>
-             <AlertCircle size={14} className="text-brand-muted" />
+             <button 
+               onClick={() => setShowSummaryBreakdown(!showSummaryBreakdown)}
+               className="text-brand-muted hover:text-brand-accent transition-colors flex items-center gap-1 text-[11px] font-bold"
+             >
+               <span>Breakdown</span>
+               <Info size={14} />
+             </button>
            </div>
-           <p className="text-3xl font-black text-brand-accent">$45 - $80</p>
-           <p className="text-[10px] text-brand-muted mt-2 leading-relaxed">Price may vary depending on parts required. You will be charged after completion.</p>
+           <p className="text-3xl font-black text-brand-accent">₹600 - ₹900</p>
+           <p className="text-[10px] text-brand-muted mt-2 leading-relaxed">The final amount will be declared and finalized after the assigned professional assesses the job on-site. You will be charged only after completion.</p>
+
+           <AnimatePresence>
+             {showSummaryBreakdown && (
+               <motion.div 
+                 initial={{ height: 0, opacity: 0 }}
+                 animate={{ height: 'auto', opacity: 1 }}
+                 exit={{ height: 0, opacity: 0 }}
+                 className="overflow-hidden mt-4 pt-4 border-t border-brand-secondary/20 space-y-2 text-[10px] font-bold uppercase tracking-widest text-brand-muted"
+               >
+                 <div className="flex justify-between items-center">
+                   <span>Visiting Charges (Fixed)</span>
+                   <span className="text-brand-text">₹250</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span>Platform Fees (Fixed)</span>
+                   <span className="text-brand-text">₹250</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span>CGST (9% · HSN {taxDetails.hsn})</span>
+                   <span className="text-brand-text">On Completion (18%)</span>
+                 </div>
+                 <div className="flex justify-between items-center">
+                   <span>SGST (9% · HSN {taxDetails.hsn})</span>
+                   <span className="text-brand-text">On Completion (18%)</span>
+                 </div>
+                 <div className="text-[9px] normal-case tracking-normal italic text-brand-muted font-medium mt-1 leading-relaxed">
+                   *Fixed platform fee and visiting charges are guaranteed. Final taxes & job cost are derived after the assigned pro completes inspection.
+                 </div>
+               </motion.div>
+             )}
+           </AnimatePresence>
         </div>
       </div>
 
@@ -1375,25 +2189,60 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
 
   if (!order) return <div className="h-full flex items-center justify-center p-6 text-brand-muted font-bold text-center">Order not found.</div>;
 
+  const getJobImages = (orderData: Order) => {
+    let before = orderData.image || "https://images.unsplash.com/photo-1542013936693-884638332954?auto=format&fit=crop&w=800&q=80";
+    let after = "https://images.unsplash.com/photo-1615066390971-03e4e1c36ddf?auto=format&fit=crop&w=800&q=80"; // default sparkling clean kitchen sink
+
+    const typeTxt = (orderData.type || "").toLowerCase();
+    const serviceTxt = (orderData.service || "").toLowerCase();
+    const noteTxt = (orderData.note || "").toLowerCase();
+
+    if (typeTxt.includes("stair") || serviceTxt.includes("stair") || noteTxt.includes("stair")) {
+      before = "https://images.unsplash.com/photo-1511216113906-8f57bb83e776?auto=format&fit=crop&w=800&q=80"; // broken stone steps
+      after = "https://images.unsplash.com/photo-1562663474-6cbb3fee4c77?auto=format&fit=crop&w=800&q=80"; // sturdy elegant staircase
+    } else if (typeTxt.includes("sink") || typeTxt.includes("leak") || serviceTxt.includes("plumb")) {
+      before = orderData.image || "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=800&q=80"; // broken sink/bathroom leak area under repairs
+      after = "https://images.unsplash.com/photo-1615066390971-03e4e1c36ddf?auto=format&fit=crop&w=800&q=80"; // modern sparkling clean kitchen sink
+    } else if (typeTxt.includes("ac") || typeTxt.includes("air cond") || typeTxt.includes("cooling")) {
+      before = "https://images.unsplash.com/photo-1527018601619-a508a2be00cd?auto=format&fit=crop&w=800&q=80"; // empty bare wall before installation
+      after = "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=800&q=80"; // clean modern wall AC unit split installed
+    }
+
+    return {
+      beforeImg: before,
+      afterImg: orderData.status === 'Completed' ? after : null
+    };
+  };
+
+  const jobImages = getJobImages(order);
+
+  const getYesterdayDateString = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  };
+
   const details = {
     id: order.id,
     title: order.type,
-    bookedAt: `${order.date} · ${order.time}`,
+    service: order.service,
+    bookedAt: order.id === 'FIX-99021' ? `${getYesterdayDateString()} · 10:15 AM` : `${order.date} · ${order.time}`,
     completedAt: order.status === 'Completed' ? order.date : null,
     status: order.status,
-    arrival: isActive ? "Today · 10:45 AM" : null,
+    arrival: isActive ? `Today · ${order.time}` : null,
     amount: order.amount,
     paymentStatus: order.status === 'Completed' ? "Paid" : "Unpaid",
     rating: orderId === 'FIX-8821' ? 5 : 0,
     review: orderId === 'FIX-8821' ? "The plumber arrived quickly and fixed the leak perfectly. Very clean work and friendly attitude." : "",
-    beforeImg: order.image || "https://images.unsplash.com/photo-1542013936693-884638332954?q=80&w=1000&auto=format&fit=crop",
-    afterImg: order.status === 'Completed' ? "https://images.unsplash.com/photo-1621905251189-08b45d6a269e?q=80&w=1000&auto=format&fit=crop" : null,
+    beforeImg: jobImages.beforeImg,
+    afterImg: jobImages.afterImg,
     description: order.note || "No additional description provided.",
     pro: order.pro || {
-      name: "Marcus Thorne",
-      rating: 4.9,
-      avatar: "MT",
-      color: "bg-blue-600"
+      name: "Ashish Kumar",
+      rating: 4.7,
+      avatar: "AK",
+      color: "bg-emerald-600"
     }
   };
 
@@ -1443,19 +2292,59 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
     doc.setFontSize(11);
     doc.text(`${details.pro.name}`, 20, 125);
     
-    // Payment Details
+    // Calculate precise pricing details based on Indian HSN service tax laws
+    const parsedAmt = parseFloat(details.amount.replace(/[^\d.-]/g, '')) || 0;
+    const taxDetails = getGSTDetailsByService(details.service);
+    const visiting = 250;
+    const platform = 250;
+    const rawCost = (parsedAmt - visiting - platform) / (1 + taxDetails.rate);
+    const cgst = Math.round(rawCost * taxDetails.cgstRate);
+    const sgst = Math.round(rawCost * taxDetails.sgstRate);
+    const jobCost = parsedAmt - visiting - platform - cgst - sgst;
+
+    const fmt = (val: number) => `INR ${val.toLocaleString('en-IN')}`;
+
+    // Payment Details Box with Itemized Table
     doc.setDrawColor(45, 51, 107);
     doc.setFillColor(245, 245, 250);
-    doc.rect(20, 140, 170, 40, "F");
+    doc.rect(20, 138, 170, 77, "F");
     
     doc.setFontSize(12);
     doc.setFont("helvetica", "bold");
-    doc.text("Payment Summary", 30, 155);
+    doc.setTextColor(45, 51, 107);
+    doc.text("Payment Summary (INR)", 30, 148);
     
-    doc.setFontSize(16);
-    doc.text(`Total Amount: ${details.amount}`, 30, 170);
-    doc.setFontSize(10);
-    doc.text(`Payment Status: ${details.paymentStatus}`, 130, 170);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Base Job Cost:`, 30, 157);
+    doc.text(`${fmt(jobCost)}`, 130, 157);
+    
+    doc.text(`Visiting Fee (Fixed):`, 30, 163);
+    doc.text(`${fmt(visiting)}`, 130, 163);
+    
+    doc.text(`Platform Fee (Fixed):`, 30, 169);
+    doc.text(`${fmt(platform)}`, 130, 169);
+    
+    doc.text(`CGST (9% - HSN ${taxDetails.hsn}):`, 30, 175);
+    doc.text(`${fmt(cgst)}`, 130, 175);
+    
+    doc.text(`SGST (9% - HSN ${taxDetails.hsn}):`, 30, 181);
+    doc.text(`${fmt(sgst)}`, 130, 181);
+    
+    doc.setDrawColor(210, 210, 220);
+    doc.line(30, 187, 180, 187);
+    
+    doc.setFontSize(13);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(45, 51, 107);
+    doc.text(`Total Paid:`, 30, 195);
+    doc.text(`INR ${parsedAmt.toLocaleString('en-IN')}`, 130, 195);
+    
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(120, 120, 120);
+    doc.text(`Payment Status: ${details.paymentStatus}`, 30, 204);
     
     // Footer
     doc.setFontSize(9);
@@ -1543,7 +2432,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 space-y-6 pb-32 no-scrollbar">
-        {isActive && <LiveMap />}
+        {isActive && <LiveMap proName={details.pro.name} />}
 
         {isActive && (
           <section className="bg-brand-accent rounded-3xl p-6 text-white shadow-xl relative overflow-hidden">
@@ -1554,7 +2443,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
                <div>
                   <p className="text-[10px] uppercase font-black tracking-[0.2em] opacity-60 mb-2">Estimated Arrival</p>
                   <p className="text-2xl font-black">{details.arrival}</p>
-                  <p className="text-xs font-medium opacity-80 mt-1">Marcus is 2 miles away</p>
+                  <p className="text-xs font-medium opacity-80 mt-1">{details.pro.name.split(' ')[0]} is 2 miles away</p>
                </div>
                <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
                   <MapPin size={24} />
@@ -1584,6 +2473,27 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
              </div>
            </div>
         </section>
+
+        {isActive && (
+          <section className="card p-0 overflow-hidden border border-brand-accent/10 shadow-sm rounded-3xl bg-white">
+            <div className="bg-brand-surface p-5 flex justify-between items-center">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-brand-muted block mb-0.5">Estimated Amount</span>
+                <span className="text-lg font-black text-brand-accent">{details.amount}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">
+                 <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+                 <span className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Estimate</span>
+              </div>
+            </div>
+            <div className="p-4 bg-amber-50/20 text-amber-900 border-t border-brand-accent/5 flex gap-3 items-start">
+              <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-[11px] font-medium leading-relaxed text-amber-800">
+                Please note that this is an estimation. The final amount will be declared and finalized after the assigned professional assesses the job on-site.
+              </p>
+            </div>
+          </section>
+        )}
 
         {isActive && (
           <section className="card border-none bg-white shadow-sm flex items-center gap-4">
@@ -1618,7 +2528,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
           {isActive ? (
             <div className="space-y-4">
               <div className="relative rounded-[32px] h-56 overflow-hidden border border-brand-secondary/30 shadow-lg">
-                <img src={details.beforeImg} className="w-full h-full object-cover" alt="Upload"/>
+                <img src={details.beforeImg} className="w-full h-full object-cover" alt="Upload" referrerPolicy="no-referrer" />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
               </div>
               <div className="p-5 bg-brand-surface rounded-2xl border border-brand-secondary/10">
@@ -1631,12 +2541,12 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
           ) : (
             <div className="grid grid-cols-2 gap-4 h-48">
               <div className="relative rounded-2xl overflow-hidden shadow-inner border border-brand-secondary/30 group">
-                  <img src={details.beforeImg} className="w-full h-full object-cover grayscale-[0.2]" alt="Before"/>
+                  <img src={details.beforeImg} className="w-full h-full object-cover grayscale-[0.2]" alt="Before" referrerPolicy="no-referrer" />
                   <div className="absolute inset-0 bg-black/10" />
                   <div className="absolute top-2 left-2 bg-black/50 text-white text-[8px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded backdrop-blur-md">Before</div>
               </div>
               <div className="relative rounded-2xl overflow-hidden shadow-inner border border-brand-accent/10">
-                  <img src={details.afterImg} className="w-full h-full object-cover" alt="After"/>
+                  <img src={details.afterImg} className="w-full h-full object-cover" alt="After" referrerPolicy="no-referrer" />
                   <div className="absolute top-2 left-2 bg-brand-accent text-white text-[8px] font-black uppercase tracking-[0.2em] px-2 py-1 rounded shadow-sm">After</div>
               </div>
             </div>
@@ -1665,35 +2575,59 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
             </div>
             
             <AnimatePresence>
-              {showBreakdown && (
-                <motion.div 
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="overflow-hidden bg-brand-surface/50 border-t border-brand-secondary/10 px-5 py-4 space-y-2"
-                >
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
-                    <span>Job Cost</span>
-                    <span className="text-brand-text">$95.00</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
-                    <span>Visiting Charges</span>
-                    <span className="text-brand-text">$15.00</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
-                    <span>Platform Fees</span>
-                    <span className="text-brand-text">$5.00</span>
-                  </div>
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
-                    <span>Taxes (GST)</span>
-                    <span className="text-brand-text">$10.00</span>
-                  </div>
-                  <div className="pt-2 border-t border-brand-secondary/10 flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Total Paid</span>
-                    <span className="text-xs font-black text-brand-accent">{details.amount}</span>
-                  </div>
-                </motion.div>
-              )}
+              {showBreakdown && (() => {
+                const parsedAmt = parseFloat(details.amount.replace(/[^\d.-]/g, '')) || 0;
+                const taxDetails = getGSTDetailsByService(details.service);
+                const visiting = 250;
+                const platform = 250;
+                
+                let jobCost = 0;
+                let cgst = 0;
+                let sgst = 0;
+
+                if (parsedAmt > 0) {
+                  const rawCost = (parsedAmt - visiting - platform) / (1 + taxDetails.rate);
+                  cgst = Math.round(rawCost * taxDetails.cgstRate);
+                  sgst = Math.round(rawCost * taxDetails.sgstRate);
+                  jobCost = parsedAmt - visiting - platform - cgst - sgst;
+                }
+
+                const fmt = (val: number) => `₹${val.toLocaleString('en-IN')}`;
+
+                return (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden bg-brand-surface/50 border-t border-brand-secondary/10 px-5 py-4 space-y-2"
+                  >
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                      <span>Job Cost</span>
+                      <span className="text-brand-text">{fmt(jobCost)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                      <span>Visiting Charges (Fixed)</span>
+                      <span className="text-brand-text">{fmt(visiting)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                      <span>Platform Fees (Fixed)</span>
+                      <span className="text-brand-text">{fmt(platform)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                      <span>CGST (9% · HSN {taxDetails.hsn})</span>
+                      <span className="text-brand-text">{fmt(cgst)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-brand-muted">
+                      <span>SGST (9% · HSN {taxDetails.hsn})</span>
+                      <span className="text-brand-text">{fmt(sgst)}</span>
+                    </div>
+                    <div className="pt-2 border-t border-brand-secondary/10 flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent">Total Paid</span>
+                      <span className="text-xs font-black text-brand-accent">{details.amount}</span>
+                    </div>
+                  </motion.div>
+                );
+              })()}
             </AnimatePresence>
             
             <div className="p-5 space-y-4 bg-white">
@@ -1730,7 +2664,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
 
                     <div className="text-center">
                       <h3 className="text-sm font-bold text-brand-accent mb-1">Rate your experience</h3>
-                      <p className="text-xs text-brand-muted">How was Elena's service today?</p>
+                      <p className="text-xs text-brand-muted">How was {details.pro.name.split(' ')[0]}'s service today?</p>
                     </div>
                     <div className="flex justify-center gap-2">
                       {[1,2,3,4,5].map(star => (
@@ -1892,9 +2826,9 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
   );
 }
 
-function SupportChatScreen({ history, onUpdate, onBack }: { history: ChatMessage[], onUpdate: (msgs: ChatMessage[]) => void, onBack: () => void }) {
+function SupportChatScreen({ userName, history, onUpdate, onBack }: { userName: string, history: ChatMessage[], onUpdate: (msgs: ChatMessage[]) => void, onBack: () => void }) {
   const [messages, setMessages] = useState<ChatMessage[]>(history.length > 0 ? history : [
-    { id: 1, text: "Hi Akshay! I'm your Fixify AI assistant. How can I help you today?", sender: 'bot', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+    { id: 1, text: `Hi ${userName.split(' ')[0]}! I'm your Fixify AI assistant. How can I help you today?`, sender: 'bot', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
   ]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -2020,7 +2954,7 @@ function SupportChatScreen({ history, onUpdate, onBack }: { history: ChatMessage
   );
 }
 
-function LiveMap() {
+function LiveMap({ proName = "Ashish Kumar" }: { proName?: string }) {
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }}
@@ -2084,7 +3018,7 @@ function LiveMap() {
       >
         <div className="relative flex flex-col items-center">
           <div className="bg-brand-accent px-2 py-1 rounded-full text-[8px] font-black text-white uppercase tracking-tighter mb-1 shadow-sm border border-white/20">
-            Elena (Pro)
+            {proName.split(' ')[0]} (Pro)
           </div>
           <div className="w-10 h-10 bg-white rounded-2xl shadow-xl flex items-center justify-center text-brand-accent border-2 border-brand-accent/5">
             <div className="relative">
@@ -2114,7 +3048,20 @@ function LiveMap() {
   );
 }
 
-function ProfileScreen({ onBack, onSupport, onAddresses, onPayments, onNotifications, onLegal, onChatHistory, onLogout }: { 
+function ProfileScreen({ 
+  userProfile,
+  onEditProfile,
+  onBack, 
+  onSupport, 
+  onAddresses, 
+  onPayments, 
+  onNotifications, 
+  onLegal, 
+  onChatHistory, 
+  onLogout 
+}: { 
+  userProfile: UserProfile,
+  onEditProfile: () => void,
   onBack: () => void, 
   onSupport: () => void, 
   onAddresses: () => void, 
@@ -2124,17 +3071,34 @@ function ProfileScreen({ onBack, onSupport, onAddresses, onPayments, onNotificat
   onChatHistory: () => void,
   onLogout: () => void
 }) {
+  const getInitials = (nameStr: string) => {
+    const parts = nameStr.trim().split(/\s+/);
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return (nameStr[0] || 'U').toUpperCase();
+  };
+
   return (
     <div className="h-full px-6 pt-12 pb-32 overflow-y-auto no-scrollbar">
       <h2 className="text-2xl font-bold mb-8">Account</h2>
       <div className="flex items-center gap-4 mb-10 pb-10 border-b border-brand-secondary/30">
-         <div className="w-16 h-16 rounded-[22px] bg-brand-accent flex items-center justify-center text-white text-2xl font-black shadow-lg">
-           AG
+         <div className="w-16 h-16 rounded-[22px] bg-brand-accent flex items-center justify-center text-white text-2xl font-black shadow-lg overflow-hidden">
+           {userProfile.avatarUrl ? (
+             <img src={userProfile.avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="Profile" />
+           ) : (
+             getInitials(userProfile.name)
+           )}
          </div>
          <div>
-            <p className="font-extrabold text-lg text-brand-accent">Akshay Goyal</p>
-            <p className="text-xs text-brand-muted font-medium">akshay@fixify.com</p>
-            <button className="text-brand-accent text-[10px] font-black uppercase tracking-widest mt-2 border-b border-brand-accent/30 pb-0.5">Edit Profile</button>
+            <p className="font-extrabold text-lg text-brand-accent">{userProfile.name}</p>
+            <p className="text-xs text-brand-muted font-medium">{userProfile.email}</p>
+            <button 
+              onClick={onEditProfile}
+              className="text-brand-accent text-[10px] font-black uppercase tracking-widest mt-2 border-b border-brand-accent/30 pb-0.5"
+            >
+              Edit Profile
+            </button>
          </div>
       </div>
 
@@ -2163,6 +3127,219 @@ function ProfileScreen({ onBack, onSupport, onAddresses, onPayments, onNotificat
           Sign Out
         </button>
       </div>
+    </div>
+  );
+}
+
+function EditProfileScreen({ 
+  userProfile, 
+  onSave, 
+  onBack 
+}: { 
+  userProfile: UserProfile, 
+  onSave: (p: UserProfile) => void, 
+  onBack: () => void 
+}) {
+  const [name, setName] = useState(userProfile.name);
+  const [email, setEmail] = useState(userProfile.email);
+  const [phone, setPhone] = useState(userProfile.phone);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(userProfile.avatarUrl);
+  const [dragActive, setDragActive] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const processFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setError('Please upload an image file (PNG/JPG/WEBP).');
+      return;
+    }
+    setError('');
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        setAvatarUrl(event.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processFile(e.target.files[0]);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError('Name is required.');
+      return;
+    }
+    if (!email.trim() || !email.includes('@')) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+    if (!phone.trim()) {
+      setError('Phone number is required.');
+      return;
+    }
+    onSave({
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      avatarUrl
+    });
+  };
+
+  const getInitials = (nameStr: string) => {
+    const parts = nameStr.trim().split(/\s+/);
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return (nameStr[0] || 'U').toUpperCase();
+  };
+
+  return (
+    <div className="h-full px-6 pt-12 pb-32 overflow-y-auto no-scrollbar">
+      <div className="flex items-center gap-4 mb-8">
+        <button 
+          onClick={onBack} 
+          className="w-10 h-10 rounded-xl bg-white border border-brand-secondary flex items-center justify-center text-brand-accent hover:bg-brand-surface active:scale-95 transition-all shadow-sm"
+        >
+          <ArrowLeft size={18} />
+        </button>
+        <h2 className="text-2xl font-bold">Edit Profile</h2>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Profile Avatar with file chooser upload / drag drop zone */}
+        <div className="flex flex-col items-center gap-4 p-5 bg-white border border-brand-secondary/40 rounded-3xl shadow-sm">
+          <div className="relative">
+            <div className="w-24 h-24 rounded-[32px] bg-brand-accent flex items-center justify-center text-white text-3xl font-black shadow-lg overflow-hidden border-2 border-brand-surface">
+              {avatarUrl ? (
+                <img src={avatarUrl} className="w-full h-full object-cover" referrerPolicy="no-referrer" alt="Profile Preview" />
+              ) : (
+                getInitials(name || "U")
+              )}
+            </div>
+            {avatarUrl && (
+              <button
+                type="button"
+                onClick={() => setAvatarUrl(null)}
+                className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full text-white flex items-center justify-center shadow-md hover:bg-red-600 transition-colors"
+                title="Remove photo"
+              >
+                <XCircle size={14} className="fill-white text-red-500" />
+              </button>
+            )}
+          </div>
+
+          <div 
+            onDragEnter={handleDrag}
+            onDragOver={handleDrag}
+            onDragLeave={handleDrag}
+            onDrop={handleDrop}
+            className={`w-full border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all ${
+              dragActive 
+                ? 'border-brand-accent bg-brand-accent/5' 
+                : 'border-brand-secondary hover:border-brand-accent bg-brand-surface'
+            }`}
+            onClick={() => document.getElementById('file-upload-input')?.click()}
+          >
+            <input 
+              id="file-upload-input" 
+              type="file" 
+              accept="image/*" 
+              className="hidden" 
+              onChange={handleFileChange} 
+            />
+            <div className="flex flex-col items-center gap-1.5">
+              <Upload size={20} className="text-brand-muted" />
+              <p className="text-xs font-bold text-brand-text">Drag & drop image or click to choose</p>
+              <p className="text-[10px] text-brand-muted">Supports PNG, JPG, or WEBP formats</p>
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="p-4 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-red-600 text-xs font-medium">
+            <AlertCircle size={16} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-brand-muted ml-1">Full Name</label>
+            <input 
+              type="text" 
+              placeholder="e.g. Akshay Goyal" 
+              className="w-full p-4 bg-white border border-brand-secondary rounded-2xl focus:ring-2 focus:ring-brand-accent/10 outline-none transition-all text-sm font-semibold text-brand-text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-brand-muted ml-1">Email ID</label>
+            <input 
+              type="email" 
+              placeholder="e.g. akshay@fixify.com" 
+              className="w-full p-4 bg-white border border-brand-secondary rounded-2xl focus:ring-2 focus:ring-brand-accent/10 outline-none transition-all text-sm font-semibold text-brand-text"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-brand-muted ml-1">Phone Number</label>
+            <input 
+              type="tel" 
+              placeholder="e.g. +91 98765 43210" 
+              className="w-full p-4 bg-white border border-brand-secondary rounded-2xl focus:ring-2 focus:ring-brand-accent/10 outline-none transition-all text-sm font-semibold text-brand-text"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+
+        <div className="pt-4 flex flex-col gap-3">
+          <button 
+            type="submit"
+            className="btn-primary w-full shadow-lg shadow-brand-accent/10"
+          >
+            Save Changes
+          </button>
+          <button 
+            type="button"
+            onClick={onBack}
+            className="w-full py-2 text-xs font-black uppercase text-brand-muted tracking-widest text-center hover:text-brand-accent transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 {
   "name": "Fixify",
   "description": "AI-first, problem-first home maintenance app. Upload a photo, AI analyzes the issue, and you book a fix in seconds.",
-  "requestFramePermissions": ["camera"],
-  "majorCapabilities": []
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
