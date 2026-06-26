@@ -193,7 +193,11 @@ export default async function handler(req: any, res: any) {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       console.warn("API key is missing on the server. Falling back to local analyzer.");
-      return res.status(200).json(analyzeLocally(note, !!image));
+      return res.status(200).json({
+        ...analyzeLocally(note, !!image),
+        isFallback: true,
+        reason: "GEMINI_API_KEY is missing in your environment variables."
+      });
     }
 
     const ai = new GoogleGenAI({
@@ -233,12 +237,15 @@ export default async function handler(req: any, res: any) {
       Be as accurate and specific as possible.`
     });
 
-    // Up to 3 attempts with progressive backoff to handle temporary 503 unavailability
+    // Up to 3 attempts with alternate models and progressive backoff to handle temporary 503 unavailability
     let lastError: any = null;
+    const modelsToTry = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.5-flash"];
+    
     for (let attempt = 1; attempt <= 3; attempt++) {
+      const selectedModel = modelsToTry[attempt - 1];
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: selectedModel,
           contents: { parts: contents },
           config: {
             responseMimeType: "application/json",
@@ -256,11 +263,14 @@ export default async function handler(req: any, res: any) {
 
         if (response && response.text) {
           const result = JSON.parse(response.text.trim());
-          return res.status(200).json(result);
+          return res.status(200).json({
+            ...result,
+            isFallback: false
+          });
         }
       } catch (err: any) {
         lastError = err;
-        console.warn(`Gemini API attempt ${attempt} failed:`, err.message || err);
+        console.warn(`Gemini API attempt ${attempt} with model ${selectedModel} failed:`, err.message || err);
         if (attempt < 3) {
           await sleep(attempt * 400); // 400ms, then 800ms
         }
@@ -269,12 +279,20 @@ export default async function handler(req: any, res: any) {
 
     // If retries failed, fall back to high-quality local analysis rather than throwing error
     console.warn("All Gemini API attempts failed. Using local diagnostic fallback handler. Error:", lastError);
-    return res.status(200).json(analyzeLocally(note, !!image));
+    return res.status(200).json({
+      ...analyzeLocally(note, !!image),
+      isFallback: true,
+      reason: `Gemini API service was temporarily overloaded or returned an error: ${lastError?.message || lastError}`
+    });
 
   } catch (error: any) {
     console.error("Critical API processor error, falling back locally:", error);
     try {
-      return res.status(200).json(analyzeLocally(note, !!image));
+      return res.status(200).json({
+        ...analyzeLocally(note, !!image),
+        isFallback: true,
+        reason: `Critical API error: ${error.message || error}`
+      });
     } catch (fallbackErr) {
       return res.status(500).json({ error: error.message || 'Internal Server Error' });
     }

@@ -163,7 +163,7 @@ function getGSTDetailsByService(service: string): TaxDetails {
 // --- Types ---
 type Screen = 
   | 'SPLASH' | 'LOGIN' | 'OTP' | 'HOME' | 'CATEGORIES' | 'PRO_LIST'
-  | 'UPLOAD' | 'NOTE' | 'AI_PREFILL' | 'ADDRESS' 
+  | 'UPLOAD' | 'NOTE' | 'AI_PREFILL' | 'AI_SLOT' | 'ADDRESS' 
   | 'SLOT' | 'SUMMARY' | 'CONFIRMATION' | 'ORDERS' | 'ORDER_DETAILS' | 'SUPPORT_CHAT' | 'ADDRESS_LIST' | 'PAYMENT_METHODS' | 'NOTIFICATIONS' | 'LEGAL' | 'TERMS' | 'PRIVACY' | 'CHAT_HISTORY' | 'PROFILE' | 'EDIT_PROFILE';
 
 interface UserProfile {
@@ -549,26 +549,35 @@ export default function App() {
       case 'HOME': return <HomeScreen state={state} onAction={(scr) => navigate(scr)} setImg={(img) => updateState({ image: img })} onSelectOrder={(id) => { updateState({ selectedOrderId: id }); navigate('ORDER_DETAILS'); }} />;
       case 'CATEGORIES': return <CategoriesScreen onBack={() => navigate('HOME')} onSelect={(cat) => { updateState({ selectedCategory: cat }); navigate('PRO_LIST'); }} />;
       case 'PRO_LIST': return <ProListScreen category={state.selectedCategory || 'Service'} onBack={() => navigate('CATEGORIES')} />;
-      case 'UPLOAD': return <UploadScreen onBack={() => navigate('HOME')} onNext={(img) => { updateState({ image: img }); navigate('NOTE'); }} />;
+      case 'UPLOAD': return <UploadScreen onBack={() => navigate('HOME')} onNext={(img, note) => { updateState({ image: img, note: note || '' }); navigate('NOTE'); }} />;
       case 'NOTE': return <NoteScreen state={state} onBack={() => navigate('UPLOAD')} onNext={(note) => { updateState({ note }); navigate('AI_PREFILL'); }} />;
       case 'AI_PREFILL': return <AIPrefillScreen state={state} onBack={() => navigate('NOTE')} onNext={(data) => {
-        const orderId = `FIX-${Math.floor(10000 + Math.random() * 90000)}`;
-        const newOrder: Order = {
-          id: orderId,
-          type: data.type,
-          service: data.service,
-          urgency: data.urgency,
-          date: state.slot.date,
-          time: state.slot.time,
-          status: 'Confirmed',
-          amount: '₹600 - ₹900',
-          image: state.image,
-          note: state.note,
-          pro: DEFAULT_PRO
-        };
-        updateState({ issueData: data, history: [newOrder, ...state.history], selectedOrderId: orderId });
-        navigate('CONFIRMATION');
+        updateState({ issueData: data });
+        navigate('AI_SLOT');
       }} />;
+      case 'AI_SLOT': return (
+        <SlotSelectionScreen 
+          onBack={() => navigate('AI_PREFILL')} 
+          onNext={(slot) => {
+            const orderId = `FIX-${Math.floor(10000 + Math.random() * 90000)}`;
+            const newOrder: Order = {
+              id: orderId,
+              type: state.issueData.type,
+              service: state.issueData.service,
+              urgency: state.issueData.urgency,
+              date: slot.date,
+              time: slot.time,
+              status: 'Confirmed',
+              amount: '₹600 - ₹900',
+              image: state.image,
+              note: state.note,
+              pro: DEFAULT_PRO
+            };
+            updateState({ slot, history: [newOrder, ...state.history], selectedOrderId: orderId });
+            navigate('CONFIRMATION');
+          }} 
+        />
+      );
       case 'ADDRESS': return <AddressScreen state={state} onBack={() => navigate('AI_PREFILL')} onNext={(addr) => { updateState({ address: addr }); navigate('SLOT'); }} />;
       case 'SLOT': return <SlotSelectionScreen onBack={() => navigate('ADDRESS')} onNext={(slot) => { updateState({ slot }); navigate('SUMMARY'); }} />;
       case 'SUMMARY': return <SummaryScreen state={state} onBack={() => navigate('SLOT')} onNext={() => {
@@ -1396,12 +1405,40 @@ function ProListScreen({ category, onBack }: { category: string, onBack: () => v
   );
 }
 
-function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: string) => void }) {
+function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: string, note?: string) => void }) {
   const videoRef = React.useRef<HTMLVideoElement>(null);
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const galleryInputRef = React.useRef<HTMLInputElement>(null);
   const [stream, setStream] = React.useState<MediaStream | null>(null);
   const [isCapturing, setIsCapturing] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState<string | null>(null);
+
+  const SAMPLE_ISSUES = [
+    {
+      name: "Leaky Faucet",
+      description: "Plumbing - Water dripping",
+      note: "The kitchen faucet is dripping continuously from the handle and the spout, leaking about 1 liter per hour.",
+      image: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' style='background:%230F172A'><path d='M350 400 h100 v50 h-100 z M400 300 v100 M380 300 h40 M360 250 c0-50 80-50 80 0 v50 h-80 z' stroke='%2338BDF8' stroke-width='12' fill='none'/><circle cx='400' cy='480' r='12' fill='%2338BDF8'/><text x='400' y='180' fill='%2394A3B8' font-family='sans-serif' font-size='32' text-anchor='middle' font-weight='bold'>Leaky Faucet</text></svg>"
+    },
+    {
+      name: "Sparking Outlet",
+      description: "Electrical - Sparks when plugged",
+      note: "The living room wall socket sparked when I tried to plug in my charger. It smells a bit like burnt plastic.",
+      image: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' style='background:%230F172A'><rect x='340' y='200' width='120' height='200' rx='20' stroke='%23F59E0B' stroke-width='8' fill='none'/><path d='M380 260 h40 M380 340 h40' stroke='%23F59E0B' stroke-width='8' stroke-linecap='round'/><path d='M400 100 L420 150 L380 170 L430 240' stroke='%23EF4444' stroke-width='10' stroke-linecap='round' stroke-linejoin='round' fill='none'/><text x='400' y='500' fill='%2394A3B8' font-family='sans-serif' font-size='32' text-anchor='middle' font-weight='bold'>Sparking Outlet</text></svg>"
+    },
+    {
+      name: "Broken Hinge",
+      description: "Carpentry - Door won't close",
+      note: "The bedroom door is sagging because the top hinge is completely loose and the screw holes are stripped.",
+      image: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' style='background:%230F172A'><rect x='300' y='150' width='200' height='350' stroke='%2310B981' stroke-width='10' fill='none'/><line x1='300' y1='150' x2='480' y2='200' stroke='%23EF4444' stroke-width='10'/><circle cx='460' cy='325' r='12' fill='%2310B981'/><text x='400' y='100' fill='%2394A3B8' font-family='sans-serif' font-size='32' text-anchor='middle' font-weight='bold'>Broken Door</text></svg>"
+    },
+    {
+      name: "Leaking AC",
+      description: "Appliance - Water dripping inside",
+      note: "The split AC unit is dripping water from the indoor unit's bottom right corner onto the floor.",
+      image: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 600' style='background:%230F172A'><rect x='250' y='200' width='300' height='120' rx='10' stroke='%23A78BFA' stroke-width='8' fill='none'/><path d='M300 320 v30 M400 320 v50 M500 320 v40' stroke='%2360A5FA' stroke-width='6' stroke-linecap='round'/><text x='400' y='140' fill='%2394A3B8' font-family='sans-serif' font-size='32' text-anchor='middle' font-weight='bold'>Leaking AC</text></svg>"
+    }
+  ];
 
   React.useEffect(() => {
     startCamera();
@@ -1413,6 +1450,7 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
   }, []);
 
   const startCamera = async () => {
+    setCameraError(null);
     try {
       const s = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'environment' }, 
@@ -1422,8 +1460,9 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
       if (videoRef.current) {
         videoRef.current.srcObject = s;
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Camera access denied:", err);
+      setCameraError(err?.message || "Permission denied or device not supported.");
     }
   };
 
@@ -1498,7 +1537,48 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
       </div>
 
       <div className="flex-1 rounded-[40px] overflow-hidden bg-black relative shadow-2xl border border-brand-secondary/20">
-        {!stream ? (
+        {cameraError ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white p-6 text-center overflow-y-auto no-scrollbar">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center text-red-400 shrink-0">
+              <Camera size={26} />
+            </div>
+            <p className="text-sm font-bold text-red-200">Camera Access Blocked / Restricted</p>
+            <p className="text-xs text-neutral-400 max-w-[280px]">
+              We couldn't open your camera. This usually happens in embedded preview frames.
+            </p>
+            
+            <div className="flex items-center gap-3 w-full max-w-[280px] shrink-0">
+              <button 
+                onClick={() => galleryInputRef.current?.click()}
+                className="flex-1 py-2.5 bg-brand-accent text-white rounded-xl text-xs font-bold shadow-md hover:bg-brand-accent/90 transition-colors cursor-pointer"
+              >
+                Upload Photo
+              </button>
+              <button 
+                onClick={startCamera}
+                className="flex-1 py-2.5 bg-white/10 text-white rounded-xl text-xs font-bold hover:bg-white/20 transition-colors cursor-pointer"
+              >
+                Retry Camera
+              </button>
+            </div>
+
+            <div className="w-full max-w-[280px] border-t border-white/10 pt-4 mt-2 shrink-0">
+              <p className="text-[10px] uppercase font-bold tracking-widest text-neutral-400 mb-3">Or try a sample issue</p>
+              <div className="grid grid-cols-2 gap-2">
+                {SAMPLE_ISSUES.map((issue, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => onNext(issue.image, issue.note)}
+                    className="flex flex-col items-center justify-center p-2.5 bg-white/5 hover:bg-white/10 active:scale-95 border border-white/10 rounded-xl transition-all cursor-pointer"
+                  >
+                    <span className="text-xs font-bold text-white leading-tight">{issue.name}</span>
+                    <span className="text-[9px] text-neutral-400 mt-0.5">{issue.name === 'Leaky Faucet' ? 'Plumbing' : issue.name === 'Sparking Outlet' ? 'Electrical' : issue.name === 'Broken Hinge' ? 'Carpentry' : 'Appliance'}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : !stream ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-white">
             <div className="w-16 h-16 rounded-full bg-white/10 animate-pulse flex items-center justify-center">
               <Camera size={32} />
@@ -1549,7 +1629,7 @@ function UploadScreen({ onBack, onNext }: { onBack: () => void, onNext: (img: st
 }
 
 function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => void, onNext: (note: string) => void }) {
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(state.note || '');
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = React.useRef<any>(null);
 
@@ -1710,9 +1790,13 @@ function NoteScreen({ state, onBack, onNext }: { state: AppState, onBack: () => 
       {state.image && (
         <div className="w-full aspect-[4/3] rounded-3xl overflow-hidden mb-6 shadow-inner relative group">
           <img src={state.image} className="w-full h-full object-cover" alt="Issue" referrerPolicy="no-referrer" />
-          <div className="absolute inset-0 bg-black/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-white text-sm font-medium">Retake</span>
-          </div>
+          <button 
+            onClick={onBack}
+            className="absolute bottom-4 right-4 bg-black/75 hover:bg-black/95 text-white text-xs font-semibold py-2.5 px-4 rounded-full flex items-center gap-1.5 shadow-lg backdrop-blur-sm transition-all duration-200 hover:scale-105 active:scale-95 border border-white/20 cursor-pointer"
+          >
+            <Camera size={14} />
+            <span>Retake / Change Photo</span>
+          </button>
         </div>
       )}
 
@@ -1836,6 +1920,21 @@ function AIPrefillScreen({ state, onBack, onNext }: { state: AppState, onBack: (
         </div>
       )}
 
+      {data?.isFallback && (
+        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl mb-6 flex items-start gap-3">
+          <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-xs text-amber-800 font-bold leading-normal">Vercel Deployment Notice</p>
+            <p className="text-[11px] text-amber-700 leading-normal">
+              {data.reason || "Using rule-based backup analyzer because GEMINI_API_KEY is not set."}
+            </p>
+            <p className="text-[10px] text-amber-600 font-medium leading-normal mt-1.5">
+              To activate Gemini AI image detection on Vercel: Add the <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-[9px] text-amber-800">GEMINI_API_KEY</code> environment variable in your Vercel Project Settings, then redeploy!
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-brand-accent/5 rounded-[32px] p-8 mb-8 border border-brand-accent/10 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4 opacity-10">
            <Sparkles size={48} className="text-brand-accent" />
@@ -1886,7 +1985,7 @@ function AIPrefillScreen({ state, onBack, onNext }: { state: AppState, onBack: (
           <p className="text-[10px] text-brand-muted font-bold uppercase tracking-wider">AI results can be edited if needed</p>
         </div>
         <button onClick={() => onNext(data)} className="btn-primary w-full py-4 text-base shadow-xl">
-          Confirm & Continue
+          Continue
         </button>
       </div>
     </div>
@@ -2275,6 +2374,40 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
     return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
   };
 
+  const getRelativeDateLabel = (dateStr: string) => {
+    if (!dateStr) return "";
+    
+    // Normalize dateStr: remove year if present (e.g. "Jun 26, 2026" -> "Jun 26")
+    const normalize = (s: string) => {
+      return s.split(',')[0].trim();
+    };
+    
+    const target = normalize(dateStr);
+    
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+    const today = new Date();
+    const todayStr = `${months[today.getMonth()]} ${today.getDate()}`;
+    
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = `${months[tomorrow.getMonth()]} ${tomorrow.getDate()}`;
+    
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = `${months[yesterday.getMonth()]} ${yesterday.getDate()}`;
+    
+    if (target === todayStr) {
+      return "Today";
+    } else if (target === tomorrowStr) {
+      return "Tomorrow";
+    } else if (target === yesterdayStr) {
+      return "Yesterday";
+    } else {
+      return dateStr;
+    }
+  };
+
   const details = {
     id: order.id,
     title: order.type,
@@ -2282,7 +2415,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
     bookedAt: order.id === 'FIX-99021' ? `${getYesterdayDateString()} · 10:15 AM` : `${order.date} · ${order.time}`,
     completedAt: order.status === 'Completed' ? order.date : null,
     status: order.status,
-    arrival: isActive ? `Today · ${order.time}` : null,
+    arrival: isActive ? `${getRelativeDateLabel(order.date)} · ${order.time}` : null,
     amount: order.amount,
     paymentStatus: order.status === 'Completed' ? "Paid" : "Unpaid",
     rating: orderId === 'FIX-8821' ? 5 : 0,
@@ -2512,7 +2645,7 @@ function OrderDetailsScreen({ orders, orderId, onBack, onSupport, onCancelOrder 
            
            <div className="grid grid-cols-2 gap-4">
              <div className="card bg-brand-surface border-none p-4">
-                <p className="text-[10px] text-brand-muted uppercase font-bold tracking-wider mb-1">Booked On</p>
+                <p className="text-[10px] text-brand-muted uppercase font-bold tracking-wider mb-1">BOOKED SLOT</p>
                 <p className="text-xs font-bold leading-tight">{details.bookedAt}</p>
              </div>
              <div className="card bg-brand-surface border-none p-4">
